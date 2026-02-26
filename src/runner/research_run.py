@@ -11,6 +11,7 @@ from utils.llm_wrapper import LLMWrapper, Provider
 from utils.logger import Logger
 from utils.pdf_parser import PDFParser
 from utils.recursive_splitter import RecursiveTextSplitter
+from utils.semantic_filter import SemanticFilter
 
 # -----------------------------------------------------------------------------
 # Logging
@@ -75,7 +76,12 @@ def run_research(research_config: dict) -> list[str]:
     chunks = split_into_chunks(flat_text)
     logger.info("Recursive split produced %d chunks", len(chunks))
 
-    return process_chunks_with_llm(chunks)
+    semantic_filter = SemanticFilter(logger=logger)
+    filtered_chunks = semantic_filter.filter(chunks)
+    logger.info("Semantic filter: %d chunks remaining", len(filtered_chunks))
+    assert False, "Stop here"
+
+    return process_chunks_with_llm(filtered_chunks)
 
 
 # -----------------------------------------------------------------------------
