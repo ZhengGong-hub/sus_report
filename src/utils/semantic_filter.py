@@ -1,15 +1,37 @@
 """
-Semantic filter: keyword prefilter → LLM classification.
+Semantic filter: keyword prefilter → LLM classification with structured output.
 Keeps only chunks that mention keywords and are about corporate carbon-reduction efforts.
 """
 from typing import List, Optional
+from pydantic import BaseModel
 
 from utils.llm_wrapper import LLMWrapper, Provider
 
+class LLMCallSchema(BaseModel):
+    prompt: str
+    schema: dict
 
-CLASSIFICATION_PROMPT = (
-    "Does this text discuss corporate efforts to reduce carbon or emissions? "
-    "Answer only YES or NO."
+# Structured summary schema for call_structured
+SUMMARY_SCHEMA = LLMCallSchema(
+    prompt="Summarize the following text and extract key points. Respond using the JSON schema.",
+    schema={
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string"},
+        },
+        "required": ["summary"],
+    },
+)
+
+FILTER_SCHEMA = LLMCallSchema(
+    prompt="Decide whether the text discusses specific corporate efforts to reduce carbon emissions. It can be either set a target of their carbon emission or what actions they are taking to reduce their carbon emission. Answer using the JSON schema.",
+    schema={
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string", "enum": ["yes", "no"]},
+        },
+        "required": ["answer"],
+    },
 )
 
 
@@ -23,13 +45,11 @@ class SemanticFilter:
     def __init__(
         self,
         keywords: Optional[List[str]] = None,
-        classification_prompt: Optional[str] = None,
         logger=None,
         llm: Optional[LLMWrapper] = None,
     ):
         self.keywords = keywords or ["carbon", "emission"]
-        self._prompt = classification_prompt or CLASSIFICATION_PROMPT
-        self._log = logger
+        self.logger = logger
         self._llm = llm or LLMWrapper(provider=Provider.OPENAI, logger=logger)
 
     def _keyword_prefilter(self, chunks: List[str]) -> List[str]:
@@ -39,8 +59,8 @@ class SemanticFilter:
             c for c in chunks
             if any(kw in c.lower() for kw in lower_keywords)
         ]
-        if self._log:
-            self._log.info(
+        if self.logger:
+            self.logger.info(
                 "Keyword prefilter: %d → %d chunks (keywords: %s)",
                 len(chunks), len(matched), self.keywords,
             )
@@ -48,13 +68,19 @@ class SemanticFilter:
 
     def _llm_classify(self, chunks: List[str]) -> List[str]:
         """Keep only chunks the LLM classifies as about corporate carbon-reduction efforts."""
-        kept = []
+        kept: List[str] = []
         for chunk in chunks:
-            reply = self._llm.call(self._prompt, chunk).strip().upper()
-            if reply.startswith("YES"):
+            result = self._llm.call_structured(
+                FILTER_SCHEMA.prompt,
+                chunk,
+                json_schema=FILTER_SCHEMA.schema,
+                schema_name="filter",
+            )
+            answer = str(result.get("answer", "")).lower()
+            if answer == "yes":
                 kept.append(chunk)
-        if self._log:
-            self._log.info(
+        if self.logger:
+            self.logger.info(
                 "LLM classification: %d → %d chunks (corporate carbon-reduction)",
                 len(chunks), len(kept),
             )

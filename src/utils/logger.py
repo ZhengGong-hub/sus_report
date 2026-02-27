@@ -1,8 +1,11 @@
 """
 Centralized logger with consistent formatting.
+Logs are saved under logs/ as logs_yyyymmdd_hhmm.log.
 """
 import logging
 import sys
+import os
+from datetime import datetime
 from typing import Any, Optional
 
 
@@ -10,6 +13,7 @@ class Logger:
     """
     Logger with a single, readable format. Duck-type compatible with logging.Logger.
     Use Logger.get("name") to obtain a configured logger.
+    Prints all log levels to file, info+ to console.
     """
 
     DEFAULT_FORMAT = "[%(asctime)s] %(levelname)-8s %(name)s  %(message)s"
@@ -24,16 +28,34 @@ class Logger:
     ):
         self._name = name
         self._logger = logging.getLogger(name)
-        self._logger.setLevel(level)
+        self._logger.setLevel(logging.DEBUG)  # Accept all logs, control via handlers
         self._logger.handlers.clear()
         self._logger.propagate = False
 
-        handler = logging.StreamHandler(stream or sys.stderr)
-        handler.setLevel(level)
-        handler.setFormatter(
-            logging.Formatter(format_string or self.DEFAULT_FORMAT, self.DATE_FORMAT)
-        )
-        self._logger.addHandler(handler)
+        # Ensure logs/ directory exists
+        logs_dir = "logs"
+        os.makedirs(logs_dir, exist_ok=True)
+
+        now = datetime.now()
+        fname = f"logs_{now.strftime('%Y%m%d_%H%M')}.log"
+        log_path = os.path.join(logs_dir, fname)
+
+        formatter = logging.Formatter(format_string or self.DEFAULT_FORMAT, self.DATE_FORMAT)
+
+        # File handler for writing all logs to disk (DEBUG+)
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        self._logger.addHandler(file_handler)
+
+        # Stream handler for stderr (console): INFO and higher
+        if stream is not None:
+            stream_handler = logging.StreamHandler(stream)
+        else:
+            stream_handler = logging.StreamHandler(sys.stderr)
+        stream_handler.setLevel(level)
+        stream_handler.setFormatter(formatter)
+        self._logger.addHandler(stream_handler)
 
     @classmethod
     def get(

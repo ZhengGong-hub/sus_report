@@ -1,13 +1,15 @@
+import json
 import logging
 import os
 from enum import Enum
-from typing import Dict, Optional
-from dotenv import load_dotenv
+from typing import Any, Dict, Optional
 
+from dotenv import load_dotenv
 from openai import OpenAI
 
 
 load_dotenv()
+
 
 class Provider(str, Enum):
     OPENAI = "openai"
@@ -15,7 +17,7 @@ class Provider(str, Enum):
 
 
 DEFAULT_MODELS: Dict[Provider, str] = {
-    Provider.OPENAI: "gpt-4o-mini",
+    Provider.OPENAI: "gpt-5-mini",
     Provider.GEMINI: "gemini-2.0-flash",
 }
 
@@ -59,34 +61,61 @@ class LLMWrapper:
             return os.environ.get("GOOGLE_API_KEY")
         return None
 
-    def call(
+    def call_structured(
         self,
         prompt: str,
         text_chunk: str,
-        temperature: float = 0.0,
-        max_tokens: int = 800,
-    ) -> str:
+        json_schema: Dict[str, Any],
+        schema_name: str = "schema",
+    ) -> Dict[str, Any]:
+        """
+        Chat completion using OpenAI response_format=json_schema.
+
+        Returns a parsed dict matching the provided JSON schema.
+        """
         messages = [
             {"role": "system", "content": prompt},
             {"role": "user", "content": text_chunk},
         ]
 
-        self._logger.debug("LLM call: model=%s, chunk_len=%d", self.model, len(text_chunk))
+        self._logger.debug(
+            "LLM structured call: model=%s, chunk_len=%d, schema=%s",
+            self.model,
+            len(text_chunk),
+            schema_name,
+        )
 
         response = self._client.chat.completions.create(
             model=self.model,
             messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "schema": json_schema,
+                },
+            },
         )
 
         if not response.choices:
-            self._logger.error("Model returned no choices.")
+            self._logger.error("Model returned no choices (structured call).")
             raise ValueError("Model returned no choices.")
 
         content = response.choices[0].message.content
         if not content:
-            self._logger.error("Model returned empty response.")
+            self._logger.error("Model returned empty response (structured call).")
             raise ValueError("Model returned empty response.")
 
-        return content.strip()
+        # The OpenAI API returns JSON text; parse it.
+        if isinstance(content, list):
+            raw = "".join(str(part) for part in content)
+        else:
+            raw = str(content)
+
+        try:
+            data: Dict[str, Any] = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            self._logger.error("Failed to parse structured JSON response: %s", raw)
+            raise ValueError("Failed to parse structured JSON response.") from exc
+
+        return data

@@ -1,4 +1,5 @@
 import tiktoken
+from utils.logger import Logger
 
 class RecursiveTextSplitter:
     def __init__(
@@ -6,50 +7,54 @@ class RecursiveTextSplitter:
         max_length: int = 500,
         overlap: int = 100,
         separators=None,
-        encoding_name: str = "cl100k_base"
+        encoding_name: str = "cl100k_base",
+        logger: Logger = None,
     ):
         self.max_length = max_length
         self.overlap = overlap
         self.separators = separators or ["\n\n",]
         self.tokenizer = tiktoken.get_encoding(encoding_name)
+        self.logger = logger
 
     def count_tokens(self, text: str) -> int:
         return len(self.tokenizer.encode(text))
 
     def split(self, text: str):
-        return self._split_recursive(text, self.separators)
+        """
+        Splits text into chunks with up to max_length tokens, using the given separators in order.
+        This is done iteratively (not recursively), with fallback forced splitting at the token level.
+        """
+        texts_to_split = [text]
+        for sep in self.separators:
+            next_texts = []
+            for t in texts_to_split:
+                # Only split if t is longer than max_length tokens
+                if self.count_tokens(t) > self.max_length and sep:
+                    next_texts.extend([x for x in t.split(sep) if x.strip()])
+                else:
+                    next_texts.append(t)
+            texts_to_split = next_texts
 
-    def _split_recursive(self, text: str, seps):
-        if self.count_tokens(text) <= self.max_length:
-            return [text.strip()]
-
-        if not seps:
-            return self._force_split(text)
-
-        sep = seps[0]
-
-        if sep == "":
-            return self._force_split(text)
-
-        parts = text.split(sep)
-        chunks = []
-        current = ""
-
-        for part in parts:
-            piece = part if current == "" else sep + part
-            if self.count_tokens(current + piece) <= self.max_length:
-                current += piece
+        # We've split on all separators; now force split any remaining long chunks
+        all_chunks = []
+        for t in texts_to_split:
+            if self.count_tokens(t) > self.max_length:
+                all_chunks.extend(self._force_split(t))
             else:
-                if current:
-                    chunks.extend(self._split_recursive(current.strip(), seps[1:]))
-                current = part
+                all_chunks.append(t.strip())
 
-        if current:
-            chunks.extend(self._split_recursive(current.strip(), seps[1:]))
+        # Apply overlap if necessary
+        result_chunks = self._apply_overlap(all_chunks)
 
-        return self._apply_overlap(chunks)
+        # Logging check for '\n\n'
+        total_newline_double = sum(chunk.count("\n\n") for chunk in result_chunks)
+        self.logger.info(f"Total '\\n\\n' occurrences in all chunks: {total_newline_double}")
+        return result_chunks
 
     def _force_split(self, text: str):
+        """
+        Forcefully splits text into chunks of max_length tokens with specified overlap.
+        """
         chunks = []
         tokens = self.tokenizer.encode(text)
         start = 0
@@ -63,7 +68,6 @@ class RecursiveTextSplitter:
                 start = 0
                 if end >= len(tokens):
                     break
-
         return chunks
 
     def _apply_overlap(self, chunks):
@@ -83,7 +87,6 @@ class RecursiveTextSplitter:
             overlap_tokens = prev_tokens[-self.overlap:] if len(prev_tokens) >= self.overlap else prev_tokens
             new_chunk_tokens = overlap_tokens + curr_tokens
             # Prevent duplication if overlap already includes the start of curr_tokens
-            # so just use curr_tokens if overlap >= curr_tokens
             if len(overlap_tokens) >= len(curr_tokens):
                 new_chunk_tokens = curr_tokens
             overlapped_chunk = self.tokenizer.decode(new_chunk_tokens)
