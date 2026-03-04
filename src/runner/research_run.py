@@ -3,12 +3,10 @@ Research pipeline: PDF → parse → aggregate → chunk → LLM.
 """
 
 from pathlib import Path
-from pydantic import BaseModel
-import os
+
 import pandas as pd
 import yaml
 
-from utils.llm_wrapper import LLMWrapper, Provider
 from utils.logger import Logger
 from utils.pdf_parser import PDFParser
 from utils.recursive_splitter import RecursiveTextSplitter
@@ -19,8 +17,14 @@ logger = Logger.get("research_run")
 
 def run_research(research_config: dict) -> list[str]:
     """Simplified pipeline: PDF → parse → aggregate → chunk → filter → LLM."""
+
+    
+
     logger.info("Loaded research config: %s", research_config)
-    pdf_path = f"files/{research_config['fileid']}.pdf"
+    fileid = research_config['fileid']
+    mapping_cid = pd.read_csv("outputs/company_esgfiling_mapping.csv").query("filingId == @research_config['fileid']")['companyid'].values[0]
+
+    pdf_path = f"files/{fileid}.pdf"
 
     # Parse PDF and aggregate text by page
     parser = PDFParser(logger=logger)
@@ -40,10 +44,11 @@ def run_research(research_config: dict) -> list[str]:
     logger.info("Recursive split produced %d chunks", len(chunks))
 
     # Filter semantically relevant chunks
-    filtered_chunks = SemanticFilter(logger=logger).filter(chunks)
-    logger.info("Semantic filter: %d chunks remaining", len(filtered_chunks))
+    # filtered_chunks = SemanticFilter(logger=logger).filter(chunks)
+    # logger.info("Semantic filter: %d chunks remaining", len(filtered_chunks))
 
-    return filtered_chunks
+    # return filtered_chunks
+    SemanticFilter(logger=logger).filter_async(chunks, cid=mapping_cid)
 
 
 if __name__ == "__main__":

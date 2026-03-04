@@ -119,3 +119,43 @@ class LLMWrapper:
             raise ValueError("Failed to parse structured JSON response.") from exc
 
         return data
+
+    def create_jsonl_for_batch(
+        self,
+        chunks: list[str],
+        cid: str,
+        output_path: str = "batch.jsonl",
+        prompt: str | None = None,
+        schema_name: str = "carbon_classification",
+    ) -> None:
+        with open(output_path, "a", encoding="utf-8") as f:
+            for i, chunk in enumerate(chunks, start=1):
+                obj = {
+                    "custom_id": f"{cid}_{i}",
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": {
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": chunk}
+                        ],
+                        "response_format": {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": schema_name,
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "answer": {"type": "string", "enum": ["yes","no"]}
+                                    },
+                                    "required": ["answer"]
+                                }
+                            }
+                        }
+                    }
+                }
+                f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+
+        self._logger.info("Saved %d chunks to %s", len(chunks), output_path)
+        return output_path
