@@ -1,17 +1,28 @@
 """
-Semantic filter: keyword prefilter → LLM classification with structured output.
-Keeps only chunks that mention keywords and are about corporate carbon-reduction efforts.
+Semantic filter: keyword prefilter → optional LLM classification.
+
+Works on a DataFrame of chunks produced by `RecursiveTextSplitter`, with
+columns:
+  - chunk_id: unique identifier per chunk
+  - chunk:    text content
 """
+from __future__ import annotations
+
 from typing import Optional
 
-from utils.llm_wrapper import LLMWrapper, Provider
+import pandas as pd
+
 from utils.llm_schemas import FILTER_SCHEMA
+from utils.llm_wrapper import LLMWrapper, Provider
+
 
 class SemanticFilter:
     """
-    Pipeline: raw chunks → keyword prefilter → LLM classification.
-    Discards chunks with no keyword match; sends keyword-matched chunks to LLM
-    to keep only those about corporate carbon-reduction efforts.
+    Pipeline on chunk DataFrames:
+
+    raw chunks (DataFrame)
+      → keyword prefilter on `chunk` column
+      → optional LLM classification using FILTER_SCHEMA.
     """
 
     def __init__(
@@ -24,57 +35,79 @@ class SemanticFilter:
         self.logger = logger
         self._llm = llm or LLMWrapper(provider=Provider.OPENAI, logger=logger)
 
-    def _keyword_prefilter(self, chunks: list[str]) -> list[str]:
+    def _keyword_prefilter(self, chunks_df: pd.DataFrame) -> pd.DataFrame:
         """Keep only chunks that contain at least one keyword (case-insensitive)."""
-        lower_keywords = [k.lower() for k in self.keywords]
-        matched = [
-            c for c in chunks
-            if any(kw in c.lower() for kw in lower_keywords)
-        ]
+        if chunks_df.empty:
+            return chunks_df
+
+        # Simple OR pattern over escaped keywords
+        pattern = "|".join(self.keywords)
+        mask = chunks_df["chunk"].str.contains(pattern, case=True, na=False)
+        filtered = chunks_df[mask].reset_index(drop=True)
+
         if self.logger:
             self.logger.info(
                 "Keyword prefilter: %d → %d chunks (keywords: %s)",
-                len(chunks), len(matched), self.keywords,
+                len(chunks_df),
+                len(filtered),
+                self.keywords,
             )
-        return matched
+        return filtered
 
-    def _llm_classify(self, chunks: list[str]) -> list[str]:
-        """Keep only chunks the LLM classifies as about corporate carbon-reduction efforts."""
-        kept: list[str] = []
-        for chunk in chunks:
+    def _llm_classify(self, chunks_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Keep only chunks the LLM classifies as about corporate carbon-reduction efforts.
+        """
+        if chunks_df.empty:
+            return chunks_df
+
+        keep_ids: list[str] = []
+        for row in chunks_df.itertuples(index=False):
+            chunk_id = row.chunk_id
+            chunk_text = row.chunk
+
             result = self._llm.call_structured(
                 FILTER_SCHEMA.prompt,
-                chunk,
+                chunk_text,
                 json_schema=FILTER_SCHEMA.schema,
                 schema_name="filter",
             )
-            self.logger.debug("LLM classification result: %s", result)
-            answer = str(result.get("answer", "")).lower()
+            if self.logger:
+                self.logger.debug("LLM classification result for %s: %s", chunk_id, result)
+
+            answer = str(result.get("answer", "")).strip().lower()
             if answer == "yes":
-                kept.append(chunk)
+                keep_ids.append(chunk_id)
+
+        filtered = chunks_df[chunks_df["chunk_id"].isin(keep_ids)].reset_index(drop=True)
+
         if self.logger:
             self.logger.info(
                 "LLM classification: %d → %d chunks (corporate carbon-reduction)",
-                len(chunks), len(kept),
+                len(chunks_df),
+                len(filtered),
             )
-        return kept
+        return filtered
 
-    def filter(self, chunks: list[str]) -> list[str]:
+    def filter(
+        self,
+        chunks_df: pd.DataFrame,
+        use_llm_classification: bool = False,
+    ) -> pd.DataFrame:
         """
-        Run pipeline: keyword prefilter then LLM classification.
-        Returns only chunks that match keywords and are deemed about corporate
-        efforts to reduce carbon/emissions.
-        """
-        if not chunks:
-            return []
-        chunks_after_keyword: list[str] = self._keyword_prefilter(chunks)
-        if not chunks_after_keyword:
-            return []
-        return self._llm_classify(chunks_after_keyword)
+        Run pipeline: keyword prefilter then optional LLM classification.
 
-    def filter_async(self, chunks: list[str], cid: str, output_path: str = "batch.jsonl") -> str:
+        - `chunks_df` must have columns `chunk_id` and `chunk`.
+        - If `use_llm_classification` is False, only the keyword prefilter is applied.
         """
-        Run with batch processing.
-        """
-        self._llm.create_jsonl_for_batch(chunks, cid=cid, output_path=output_path)
-        return "batch is created under %s" % output_path
+        if chunks_df is None or chunks_df.empty:
+            return chunks_df
+
+        after_keyword = self._keyword_prefilter(chunks_df)
+        if after_keyword.empty:
+            return after_keyword
+
+        if use_llm_classification:
+            return self._llm_classify(after_keyword)
+
+        return after_keyword

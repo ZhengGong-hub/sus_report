@@ -1,1 +1,10 @@
-fileid: 215978062
+fileid: [215978062, 132460222]
+companyid: [32307, 343303132, 278576]
+# 32307 -> Nvidia
+# 343303132 -> UiPath
+# 278576 -> J.B. Hunt
+output_folder: "to_batch"
+jsonl_path: "test_batch"
+ref_data_path: "test_batch_ref"
+
+identifier: "companyid"

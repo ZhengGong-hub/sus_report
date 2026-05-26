@@ -122,40 +122,32 @@ class LLMWrapper:
 
     def create_jsonl_for_batch(
         self,
-        chunks: list[str],
-        cid: str,
-        output_path: str = "batch.jsonl",
+        chunk: str,
+        custom_id: str,
         prompt: str | None = None,
-        schema_name: str = "carbon_classification",
-    ) -> None:
-        with open(output_path, "a", encoding="utf-8") as f:
-            for i, chunk in enumerate(chunks, start=1):
-                obj = {
-                    "custom_id": f"{cid}_{i}",
-                    "method": "POST",
-                    "url": "/v1/chat/completions",
-                    "body": {
-                        "model": self.model,
-                        "messages": [
-                            {"role": "system", "content": prompt},
-                            {"role": "user", "content": chunk}
-                        ],
-                        "response_format": {
-                            "type": "json_schema",
-                            "json_schema": {
-                                "name": schema_name,
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "answer": {"type": "string", "enum": ["yes","no"]}
-                                    },
-                                    "required": ["answer"]
-                                }
-                            }
-                        }
-                    }
+        schema: Dict[str, Any] | None = None,
+        schema_name: str = "schema",
+    ) -> Dict[str, Any]:
+        """
+        Serialize a text chunk to OpenAI batch-ready JSONL.
+        """
+        obj = {
+            "custom_id": f"{custom_id}",
+            "method": "POST",
+            "url": "/v1/chat/completions",
+            "body": {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": chunk}
+                ],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": schema_name,
+                        "schema": schema,
+                    },
                 }
-                f.write(json.dumps(obj, ensure_ascii=False) + "\n")
-
-        self._logger.info("Saved %d chunks to %s", len(chunks), output_path)
-        return output_path
+            }
+        }
+        return obj

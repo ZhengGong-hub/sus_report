@@ -5,10 +5,10 @@ import glob
 # relative import 
 from openai_batch_wrapper.batch_manager import BatchManager
 
-job_path = "output_data/small_scale_random_200k/jsonl/job_0.jsonl"
+job_path = "to_batch/test_batch.jsonl"
 
 batch_manager = BatchManager(
-    job_id="job_0",
+    job_id="test_batch",
     input_jsonl_path=job_path,
     batch_task_reset=False
 )

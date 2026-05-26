@@ -1,0 +1,42 @@
+Pipeline Update — Research Extraction for Corporate Carbon/ESG Reports
+
+Overview
+--------
+We have a three-step pipeline to extract structured information from ESG/sustainability PDF reports using LLMs (OpenAI batch API).
+
+
+Step 1: research_run.py
+-----------------------
+- Input: Config (YAML) specifying which PDFs to process (by file ID or company ID).
+- Process:
+  1. Parse PDFs → extract text blocks, clean (fix hyphenation, remove headers/footers).
+  2. Aggregate text by page, filter out very short pages.
+  3. Split into overlapping chunks (~500 tokens each).
+  4. Keyword prefilter: keep only chunks mentioning "carbon" or "emission".
+  5. Build batch requests: each chunk is sent to the LLM with a research question (e.g., classify corporate carbon-reduction efforts).
+- Output:
+  - JSONL file: OpenAI batch-ready requests (one per chunk).
+  - Parquet file: reference data (filing ID, chunk IDs, chunk text) for later merging.
+
+
+Step 2: run_batch.py
+--------------------
+- Input: JSONL file produced by research_run.
+- Process: Uses openai_batch_wrapper to upload the JSONL, create an OpenAI batch job, and submit it.
+- Output: Batch job is queued and processed by OpenAI.
+
+
+Step 3: batch_status_check.py
+------------------------------
+- Input: Same job ID and output folder as run_batch.
+- Process:
+  1. Check batch status (completed / expired / in progress).
+  2. If completed: fetch output file from OpenAI.
+  3. Merge LLM results with reference data (filing ID, company name, etc.).
+- Output: Clean CSV with chunk-level LLM responses joined to filing metadata.
+
+
+End-to-end flow
+---------------
+PDF reports → research_run → JSONL + ref.parquet → run_batch → OpenAI batch job
+→ batch_status_check → clean_and_aggregated_output_{job}.csv

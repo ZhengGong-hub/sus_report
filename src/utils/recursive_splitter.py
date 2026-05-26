@@ -1,4 +1,6 @@
 import tiktoken
+import pandas as pd
+
 from utils.logger import Logger
 
 class RecursiveTextSplitter:
@@ -19,7 +21,7 @@ class RecursiveTextSplitter:
     def count_tokens(self, text: str) -> int:
         return len(self.tokenizer.encode(text))
 
-    def split(self, text: str):
+    def split(self, text: str, chunk_id_prefix: str = "chunk_") -> pd.DataFrame:
         """
         Splits text into chunks with up to max_length tokens, using the given separators in order.
         This is done iteratively (not recursively), with fallback forced splitting at the token level.
@@ -49,7 +51,11 @@ class RecursiveTextSplitter:
         # Logging check for '\n\n'
         total_newline_double = sum(chunk.count("\n\n") for chunk in result_chunks)
         self.logger.info(f"Total '\\n\\n' occurrences in all chunks: {total_newline_double}")
-        return result_chunks
+
+        # convert result chunks to df 
+        result_chunks_df = pd.DataFrame(result_chunks, columns=["chunk"])
+        result_chunks_df["chunk_id"] = [f"{chunk_id_prefix}_{i}" for i in range(len(result_chunks_df))]
+        return result_chunks_df
 
     def _force_split(self, text: str):
         """
