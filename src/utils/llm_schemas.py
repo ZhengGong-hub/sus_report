@@ -3,11 +3,17 @@ Shared structured-output schemas for LLM calls.
 """
 from pydantic import BaseModel
 
+from utils.taxonomy import TIER1, TIER2, GOVERNANCE, build_tier1_schema, build_tier2_schema
+
 
 class LLMCallSchema(BaseModel):
     prompt: str
     schema: dict
 
+
+# ---------------------------------------------------------------------------
+# Generic utility schemas
+# ---------------------------------------------------------------------------
 
 SUMMARY_SCHEMA = LLMCallSchema(
     prompt="Summarize the following text and extract key points. Respond using the JSON schema.",
@@ -19,7 +25,6 @@ SUMMARY_SCHEMA = LLMCallSchema(
         "required": ["summary"],
     },
 )
-
 
 FILTER_SCHEMA = LLMCallSchema(
     prompt=(
@@ -37,37 +42,61 @@ FILTER_SCHEMA = LLMCallSchema(
     },
 )
 
-CARBON_ACTION_SCHEMA = LLMCallSchema(
-    prompt=(
-        "Analyze the text and determine whether the company discusses efforts to reduce carbon emissions. "
-        "If yes, describe the specific measures the company is taking and the goal of the carbon emission target.\n\n"
-        "Instructions:\n"
-        "1. Describe the carbon reduction measures in one concise sentence.\n"
-        "2. If carbon reduction measures are not mentioned, write 'none'.\n"
-        "3. If a carbon emission target is not mentioned, write 'none'.\n"
-        "4. When writing 'none', write exactly 'none' and nothing else.\n\n"
-        "Answer using the JSON schema."
-    ),
-    schema={
-        "type": "object",
-        "properties": {
-            "mentions_carbon_reduction": {
-                "type": "string",
-                "enum": ["yes", "no"]
-            },
-            "carbon_reduction_measures": {
-                "type": "string",
-                "description": "One concise sentence describing the company's carbon reduction measures."
-            },
-            "carbon_emission_target": {
-                "type": "string",
-                "description": "The stated carbon emission reduction goal or target."
-            }
-        },
-        "required": [
-            "mentions_carbon_reduction",
-            "carbon_reduction_measures",
-            "carbon_emission_target"
-        ],
-    },
+
+# ---------------------------------------------------------------------------
+# Carbon extraction schemas (Tier-1 and Tier-2)
+# ---------------------------------------------------------------------------
+
+_INTRO = (
+    "You are extracting corporate carbon-reduction measures from sustainability report text.\n"
+)
+
+_TIER1_DESCRIPTIONS = "\n".join([
+    "  S1  — Scope 1: direct emissions from owned or controlled sources (combustion, industrial processes, fugitive releases).",
+    "  S2  — Scope 2: indirect emissions from purchased electricity, heat, steam, or cooling.",
+    "  S3U — Scope 3 upstream: indirect emissions in the upstream supply chain (Categories 1–8, e.g. purchased goods, business travel, commuting).",
+    "  S3D — Scope 3 downstream: indirect emissions from use and end-of-life of sold products (Categories 9–15, e.g. use-phase emissions, downstream logistics, investments).",
+    "  CDR — Carbon removal and offsets: nature-based solutions, engineered carbon dioxide removal, or voluntary offset purchases.",
+])
+
+_TIER2_LISTING = "\n".join(
+    f"  {bucket}: {', '.join(measures)}" for bucket, measures in TIER2.items()
+)
+
+_SHARED_RULES = "\n".join([
+    "Rules:",
+    "- 'adopted' = true only for concrete actions in the reporting year. Aspirational language alone ('we are committed to...') = false.",
+    "- 'quote' must be verbatim, ≤30 words, copied from the text. null if not adopted.",
+    "- 'page' is the page number where the quote appears (use [PAGE N] markers). null if not adopted.",
+    "- If unsure, set adopted=false. Do not infer beyond the text.",
+    "",
+    "Answer using the JSON schema.",
+])
+
+CARBON_TIER1_SCHEMA = LLMCallSchema(
+    prompt="\n".join([
+        _INTRO,
+        "For each Tier-1 scope bucket below, decide whether the company describes adopting or actively pursuing any emission-reduction actions in that scope.",
+        "",
+        "Tier-1 buckets:",
+        _TIER1_DESCRIPTIONS,
+        "",
+        _SHARED_RULES,
+    ]),
+    schema=build_tier1_schema(),
+)
+
+CARBON_TIER2_SCHEMA = LLMCallSchema(
+    prompt="\n".join([
+        _INTRO,
+        "For each Tier-2 category and governance flag below, decide whether the company describes adopting or actively pursuing that measure in the reporting year.",
+        "",
+        "Tier-2 categories:",
+        _TIER2_LISTING,
+        "",
+        f"Governance flags: {', '.join(GOVERNANCE)}",
+        "",
+        _SHARED_RULES,
+    ]),
+    schema=build_tier2_schema(),
 )
