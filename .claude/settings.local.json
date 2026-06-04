@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(.venv/bin/python src/runner/sample_companies.py)",
+      "Bash(python3 -c ' *)",
+      "Bash(.venv/bin/python3 -c ' *)",
+      "Bash(pip3 install *)",
+      "Bash(python3 -m pip install openpyxl -q)",
+      "Bash(.venv/bin/python -c \"from src.utils.taxonomy import TIER1, TIER2, GOVERNANCE; print\\(TIER1\\)\")",
+      "Bash(.venv/bin/python -)",
+      "Bash(.venv/bin/python batch_status_check.py)"
+    ]
+  }
+}

@@ -27,9 +27,10 @@ Config shape (YAML / dict)
   identifier:    "fileid" | "companyid"
   fileid:        [215978062, ...]   # used when identifier == "fileid"
   companyid:     [32307, ...]       # used when identifier == "companyid"
-  output_folder: "to_batch"
-  jsonl_path:    "test_batch"       # stem; _tier1.jsonl / _tier2.jsonl appended
-  ref_data_path: "test_batch_ref"   # stem; .parquet is appended
+  output_folder:       "to_batch"
+  jsonl_path:          "test_batch"  # stem; _tier1.jsonl / _tier2.jsonl appended
+  ref_data_path:       "test_batch_ref"  # stem; .parquet is appended
+  max_chunks_per_file: 50            # optional; omit or set null for no cap
 """
 
 import os
@@ -52,6 +53,7 @@ logger = Logger.get("research_run")
 
 def _build_batch_entries_for_file(
     fileid: str,
+    max_chunks: int | None = None,
 ) -> tuple[list[dict], list[dict], pd.DataFrame]:
     """
     Run the full per-filing pipeline and return Tier-1 entries, Tier-2 entries,
@@ -102,6 +104,10 @@ def _build_batch_entries_for_file(
     filtered_chunks = SemanticFilter(logger=logger).filter(chunks_df, use_llm_classification=False)
     logger.info("Semantic filter: %d chunks remaining", len(filtered_chunks))
 
+    if max_chunks is not None and len(filtered_chunks) > max_chunks:
+        filtered_chunks = filtered_chunks.head(max_chunks)
+        logger.info("Capped to %d chunks for fileid=%s", max_chunks, fileid)
+
     # --- Step 5: format for OpenAI batch (both tiers) ---
     tier1_entries = ResearchQuestion(schema=CARBON_TIER1_SCHEMA, logger=logger).create_batch_jsonl(filtered_chunks)
     tier2_entries = ResearchQuestion(schema=CARBON_TIER2_SCHEMA, logger=logger).create_batch_jsonl(filtered_chunks)
@@ -150,7 +156,10 @@ def run_research(research_config: dict) -> str:
     all_tier2: list[dict] = []
     ref_frames: list[pd.DataFrame] = []
     for fileid in fileids:
-        t1, t2, ref = _build_batch_entries_for_file(str(fileid))
+        if not os.path.exists(f"files/{fileid}.pdf"):
+            logger.warning("PDF not found for fileid=%s — skipping", fileid)
+            continue
+        t1, t2, ref = _build_batch_entries_for_file(str(fileid), max_chunks=research_config.get("max_chunks_per_file"))
         all_tier1.extend(t1)
         all_tier2.extend(t2)
         ref_frames.append(ref)
@@ -209,5 +218,5 @@ def _load_esgfiling_mapping(companyids: list[int] = None, fileids: list[int] = N
 
 
 if __name__ == "__main__":
-    with open("src/research_config/test.yaml") as f:
+    with open("src/research_config/pilot.yaml") as f:
         run_research(yaml.safe_load(f))
