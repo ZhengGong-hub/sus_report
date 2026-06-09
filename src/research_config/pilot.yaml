@@ -34,3 +34,4 @@ output_folder: to_batch_pilot
 jsonl_path: pilot_batch
 ref_data_path: pilot_batch_ref
 max_chunks_per_file: 20
+include_evidence: true   # set to false for adopted-only (no quote/page/notes)

@@ -39,7 +39,7 @@ import json
 import pandas as pd
 import yaml
 
-from utils.llm_schemas import CARBON_TIER1_SCHEMA, CARBON_TIER2_SCHEMA
+from utils.llm_schemas import build_carbon_tier1_schema, build_carbon_tier2_schema
 from utils.llm_wrapper import DEFAULT_MODELS, Provider
 from utils.logger import Logger
 from utils.pdf_parser import PDFParser
@@ -54,6 +54,7 @@ logger = Logger.get("research_run")
 def _build_batch_entries_for_file(
     fileid: str,
     max_chunks: int | None = None,
+    include_evidence: bool = True,
 ) -> tuple[list[dict], list[dict], pd.DataFrame]:
     """
     Run the full per-filing pipeline and return Tier-1 entries, Tier-2 entries,
@@ -109,8 +110,8 @@ def _build_batch_entries_for_file(
         logger.info("Capped to %d chunks for fileid=%s", max_chunks, fileid)
 
     # --- Step 5: format for OpenAI batch (both tiers) ---
-    tier1_entries = ResearchQuestion(schema=CARBON_TIER1_SCHEMA, logger=logger).create_batch_jsonl(filtered_chunks)
-    tier2_entries = ResearchQuestion(schema=CARBON_TIER2_SCHEMA, logger=logger).create_batch_jsonl(filtered_chunks)
+    tier1_entries = ResearchQuestion(schema=build_carbon_tier1_schema(include_evidence), logger=logger).create_batch_jsonl(filtered_chunks)
+    tier2_entries = ResearchQuestion(schema=build_carbon_tier2_schema(include_evidence), logger=logger).create_batch_jsonl(filtered_chunks)
     logger.info("Created %d tier1 / %d tier2 batch entries for fileid=%s", len(tier1_entries), len(tier2_entries), fileid)
 
     reference_df = pd.DataFrame({
@@ -159,7 +160,11 @@ def run_research(research_config: dict) -> str:
         if not os.path.exists(f"files/{fileid}.pdf"):
             logger.warning("PDF not found for fileid=%s — skipping", fileid)
             continue
-        t1, t2, ref = _build_batch_entries_for_file(str(fileid), max_chunks=research_config.get("max_chunks_per_file"))
+        t1, t2, ref = _build_batch_entries_for_file(
+            str(fileid),
+            max_chunks=research_config.get("max_chunks_per_file"),
+            include_evidence=research_config.get("include_evidence", True),
+        )
         all_tier1.extend(t1)
         all_tier2.extend(t2)
         ref_frames.append(ref)

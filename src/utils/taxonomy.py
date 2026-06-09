@@ -27,62 +27,56 @@ GOVERNANCE = ["sbti", "internal_carbon_price", "exec_comp_linked", "third_party_
 
 PROMPT_VERSION = "v1"
 
-_MEASURE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "adopted": {"type": "boolean"},
-        "quote": {"type": ["string", "null"]},
-        "page": {"type": ["integer", "null"]},
-    },
-    "required": ["adopted", "quote", "page"],
-    "additionalProperties": False,
-}
+def _measure_schema(include_evidence: bool) -> dict:
+    if include_evidence:
+        return {
+            "type": "object",
+            "properties": {
+                "adopted": {"type": "boolean"},
+                "quote": {"type": ["string", "null"]},
+                "page":  {"type": ["integer", "null"]},
+            },
+            "required": ["adopted", "quote", "page"],
+            "additionalProperties": False,
+        }
+    # flat boolean — no wrapper object, minimises output tokens
+    return {"type": "boolean"}
 
 
-def build_tier1_schema() -> dict:
+def build_tier1_schema(include_evidence: bool = True) -> dict:
     """JSON schema for Tier-1 bucket-level extraction (5 scope buckets)."""
-    tier1_props = {bucket: _MEASURE_SCHEMA for bucket in TIER1}
-    return {
-        "type": "object",
-        "properties": {
-            "tier1": {
-                "type": "object",
-                "properties": tier1_props,
-                "required": list(tier1_props.keys()),
-                "additionalProperties": False,
-            },
-            "notes": {"type": "string"},
-        },
-        "required": ["tier1", "notes"],
-        "additionalProperties": False,
+    ms = _measure_schema(include_evidence)
+    tier1_props = {bucket: ms for bucket in TIER1}
+    props: dict = {
+        "tier1": {
+            "type": "object",
+            "properties": tier1_props,
+            "required": list(tier1_props.keys()),
+            "additionalProperties": False,
+        }
     }
+    return {"type": "object", "properties": props,
+            "required": ["tier1"], "additionalProperties": False}
 
 
-def build_tier2_schema() -> dict:
+def build_tier2_schema(include_evidence: bool = True) -> dict:
     """JSON schema for Tier-2 measure-level extraction (27 measures + 4 governance flags)."""
-    tier2_props = {
-        measure: _MEASURE_SCHEMA
-        for measures in TIER2.values()
-        for measure in measures
-    }
-    gov_props = {flag: _MEASURE_SCHEMA for flag in GOVERNANCE}
-    return {
-        "type": "object",
-        "properties": {
-            "tier2": {
-                "type": "object",
-                "properties": tier2_props,
-                "required": list(tier2_props.keys()),
-                "additionalProperties": False,
-            },
-            "governance": {
-                "type": "object",
-                "properties": gov_props,
-                "required": list(gov_props.keys()),
-                "additionalProperties": False,
-            },
-            "notes": {"type": "string"},
+    ms = _measure_schema(include_evidence)
+    tier2_props = {m: ms for measures in TIER2.values() for m in measures}
+    gov_props   = {flag: ms for flag in GOVERNANCE}
+    props: dict = {
+        "tier2": {
+            "type": "object",
+            "properties": tier2_props,
+            "required": list(tier2_props.keys()),
+            "additionalProperties": False,
         },
-        "required": ["tier2", "governance", "notes"],
-        "additionalProperties": False,
+        "governance": {
+            "type": "object",
+            "properties": gov_props,
+            "required": list(gov_props.keys()),
+            "additionalProperties": False,
+        },
     }
+    return {"type": "object", "properties": props,
+            "required": ["tier2", "governance"], "additionalProperties": False}

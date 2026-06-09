@@ -1,6 +1,7 @@
 import pandas as pd
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.properties import OutlineProperties
 
 from src.utils.taxonomy import GOVERNANCE, TIER1, TIER2
 
@@ -150,6 +151,13 @@ class ExcelReporter:
                 ws.column_dimensions[letter].width = 35
             else:
                 ws.column_dimensions[letter].width = max(len(col) + 2, 14)
+
+        # group quote + notes columns so they can be collapsed with the +/- button
+        for ci, col in enumerate(all_cols, 1):
+            if col.endswith("_quote") or col in ("notes_tier1", "notes_tier2", "chunks"):
+                ws.column_dimensions[get_column_letter(ci)].outlineLevel = 1
+        # place the collapse button to the left of the group (more intuitive)
+        ws.sheet_properties.outlinePr = OutlineProperties(summaryRight=False)
 
         ws.freeze_panes    = ws.cell(2, n_id + 1)
         ws.row_dimensions[1].height = 20

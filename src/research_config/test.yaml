@@ -9,3 +9,4 @@ ref_data_path: "test_batch_ref"
 
 identifier: "companyid"
 max_chunks_per_file: 999
+include_evidence: true   # set to false for adopted-only (no quote/page/notes)

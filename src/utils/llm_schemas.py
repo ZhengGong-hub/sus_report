@@ -63,40 +63,56 @@ _TIER2_LISTING = "\n".join(
     f"  {bucket}: {', '.join(measures)}" for bucket, measures in TIER2.items()
 )
 
-_SHARED_RULES = "\n".join([
-    "Rules:",
-    "- 'adopted' = true only for concrete actions in the reporting year. Aspirational language alone ('we are committed to...') = false.",
-    "- 'quote' must be verbatim, ≤30 words, copied from the text. null if not adopted.",
-    "- 'page' is the page number where the quote appears (use [PAGE N] markers). null if not adopted.",
-    "- If unsure, set adopted=false. Do not infer beyond the text.",
-    "",
-    "Answer using the JSON schema.",
-])
+def _shared_rules(include_evidence: bool) -> str:
+    rules = [
+        "Rules:",
+        "- 'adopted' = true only for concrete actions in the reporting year. Aspirational language alone ('we are committed to...') = false.",
+    ]
+    if include_evidence:
+        rules += [
+            "- 'quote' must be verbatim, ≤30 words, copied from the text. null if not adopted.",
+            "- 'page' is the page number where the quote appears (use [PAGE N] markers). null if not adopted.",
+        ]
+    rules += [
+        "- If unsure, set adopted=false. Do not infer beyond the text.",
+        "",
+        "Answer using the JSON schema.",
+    ]
+    return "\n".join(rules)
 
-CARBON_TIER1_SCHEMA = LLMCallSchema(
-    prompt="\n".join([
-        _INTRO,
-        "For each Tier-1 scope bucket below, decide whether the company describes adopting or actively pursuing any emission-reduction actions in that scope.",
-        "",
-        "Tier-1 buckets:",
-        _TIER1_DESCRIPTIONS,
-        "",
-        _SHARED_RULES,
-    ]),
-    schema=build_tier1_schema(),
-)
 
-CARBON_TIER2_SCHEMA = LLMCallSchema(
-    prompt="\n".join([
-        _INTRO,
-        "For each Tier-2 category and governance flag below, decide whether the company describes adopting or actively pursuing that measure in the reporting year.",
-        "",
-        "Tier-2 categories:",
-        _TIER2_LISTING,
-        "",
-        f"Governance flags: {', '.join(GOVERNANCE)}",
-        "",
-        _SHARED_RULES,
-    ]),
-    schema=build_tier2_schema(),
-)
+def build_carbon_tier1_schema(include_evidence: bool = True) -> LLMCallSchema:
+    return LLMCallSchema(
+        prompt="\n".join([
+            _INTRO,
+            "For each Tier-1 scope bucket below, decide whether the company describes adopting or actively pursuing any emission-reduction actions in that scope.",
+            "",
+            "Tier-1 buckets:",
+            _TIER1_DESCRIPTIONS,
+            "",
+            _shared_rules(include_evidence),
+        ]),
+        schema=build_tier1_schema(include_evidence),
+    )
+
+
+def build_carbon_tier2_schema(include_evidence: bool = True) -> LLMCallSchema:
+    return LLMCallSchema(
+        prompt="\n".join([
+            _INTRO,
+            "For each Tier-2 category and governance flag below, decide whether the company describes adopting or actively pursuing that measure in the reporting year.",
+            "",
+            "Tier-2 categories:",
+            _TIER2_LISTING,
+            "",
+            f"Governance flags: {', '.join(GOVERNANCE)}",
+            "",
+            _shared_rules(include_evidence),
+        ]),
+        schema=build_tier2_schema(include_evidence),
+    )
+
+
+# backwards-compatible constants (full evidence mode)
+CARBON_TIER1_SCHEMA = build_carbon_tier1_schema()
+CARBON_TIER2_SCHEMA = build_carbon_tier2_schema()
