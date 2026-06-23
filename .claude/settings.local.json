@@ -9,7 +9,10 @@
       "Bash(python3 -m pip install openpyxl -q)",
       "Bash(.venv/bin/python -c \"from src.utils.taxonomy import TIER1, TIER2, GOVERNANCE; print\\(TIER1\\)\")",
       "Bash(.venv/bin/python -)",
-      "Bash(.venv/bin/python batch_status_check.py)"
+      "Bash(.venv/bin/python batch_status_check.py)",
+      "Bash(pip show *)",
+      "Bash(.venv/bin/pip show *)",
+      "Bash(.venv/bin/python3 build_v2_batch.py)"
     ]
   }
 }
