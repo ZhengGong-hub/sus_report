@@ -10,6 +10,24 @@ from __future__ import annotations
 
 PROMPT_VERSION = "v2"
 
+# ── v1 measure list (frozen — for reference and compare_v1_v2.py) ─────────────
+# Differences from v2:
+#   dropped : 247_cfe
+#   split   : c1_purchased_goods → c1_supplier_engagement + c1_material_substitution
+#   added   : renewable_electricity_general, packaging
+
+V1_MEASURE_IDS: list[str] = [
+    "energy_efficiency", "fuel_switching", "onsite_renewables",
+    "fgas_substitution", "methane_fugitive", "process_emissions",
+    "ppa", "rec_goo", "247_cfe", "low_carbon_heat",
+    "c1_purchased_goods", "c2_capital_goods", "c3_fuel_energy",
+    "c4_upstream_transport", "c5_waste_ops", "c6_business_travel",
+    "c7_commuting", "c8_upstream_leased",
+    "c9_downstream_transport", "c10_processing", "c11_use_phase",
+    "c12_eol", "c13_downstream_leased", "c14_franchises", "c15_investments",
+    "nbs", "tech_cdr", "voluntary_offsets",
+]
+
 # ── Tier-1 scope buckets ──────────────────────────────────────────────────────
 
 TIER1_BUCKETS: dict[str, str] = {

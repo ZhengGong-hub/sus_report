@@ -1,23 +1,24 @@
-import pandas as pd 
-import time
-import glob
+"""
+run_batch.py — upload and submit the v2 combined batch to OpenAI.
 
-# relative import 
+Run order:
+  1. python build_batch.py     # generate the JSONL (already done if parquet exists)
+  2. python run_batch.py       # this file — upload + submit
+  3. (wait for OpenAI)
+  4. python parse_output.py    # flatten output to CSV
+  5. python compare_v1_v2.py   # adoption-rate delta vs v1
+"""
+
 from openai_batch_wrapper.batch_manager import BatchManager
 
+JOB_ID     = "pilot_batch_combined"
+INPUT_PATH = f"to_batch_pilot/{JOB_ID}.jsonl"
 
-TIERS = ["tier1", "tier2"]
+batch_manager = BatchManager(
+    job_id=JOB_ID,
+    input_jsonl_path=INPUT_PATH,
+    batch_task_reset=False,
+)
 
-for tier in TIERS:
-    job_path = f"to_batch_pilot/pilot_batch_{tier}.jsonl"
-
-    batch_manager = BatchManager(
-        job_id=f"pilot_batch_{tier}",
-        input_jsonl_path=job_path,
-        batch_task_reset=False
-    )
-
-    # batch_manager.delete_all_files()
-
-    batch_manager.upload_file()
-    batch_manager.create_batch()
+batch_manager.upload_file()
+batch_manager.create_batch()

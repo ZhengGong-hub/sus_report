@@ -1,19 +1,19 @@
 """
-build_v2_batch.py — build the v2 combined-call batch JSONL.
+build_batch.py — build the combined-call batch JSONL (v2 extraction).
 
 One request per chunk; combined tier1 + tier2 + governance + evidence in a
 single schema. Reads the same reference parquet used for v1 so the chunk set
 is identical (required for the v1/v2 comparison in compare_v1_v2.py).
 
 Output:
-  to_batch_pilot/pilot_batch_combined.jsonl   — batch input
+  to_batch_pilot/pilot_batch_combined.jsonl        — batch input
   to_batch_pilot/pilot_batch_combined_ref.parquet  — reference (join key)
 
 Usage:
-  python build_v2_batch.py
-  python build_v2_batch.py --ref to_batch_pilot/pilot_batch_ref.parquet
-                           --out to_batch_pilot/pilot_batch_combined.jsonl
-                           --model gpt-5-mini
+  python build_batch.py
+  python build_batch.py --ref to_batch_pilot/pilot_batch_ref.parquet
+                        --out to_batch_pilot/pilot_batch_combined.jsonl
+                        --model gpt-5-mini
 """
 
 from __future__ import annotations

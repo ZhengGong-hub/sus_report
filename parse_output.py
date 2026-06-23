@@ -1,5 +1,5 @@
 """
-parse_v2_output.py — flatten combined v2 batch output to analysis-ready columns.
+parse_output.py — flatten combined batch output to analysis-ready columns.
 
 Input:
   output/output_pilot_batch_combined.csv   (produced by BatchManager.get_output_file)
