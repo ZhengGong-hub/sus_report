@@ -24,7 +24,7 @@ import os
 
 import pandas as pd
 
-from taxonomy import (
+from carbontax.taxonomy import (
     PROMPT_VERSION,
     build_combined_schema,
     build_combined_system_prompt,
@@ -92,8 +92,8 @@ def build_batch(
     print(f"Wrote reference parquet  → {ref_out_path}")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build v2 combined batch JSONL")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Build combined-call batch JSONL")
     parser.add_argument("--ref",   default=DEFAULT_REF,     help="Input reference parquet")
     parser.add_argument("--out",   default=DEFAULT_OUT,     help="Output JSONL path")
     parser.add_argument("--model", default=DEFAULT_MODEL,   help="OpenAI model id")
@@ -104,3 +104,7 @@ if __name__ == "__main__":
         out_path=args.out,
         model=args.model,
     )
+
+
+if __name__ == "__main__":
+    main()

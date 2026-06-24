@@ -1,7 +1,7 @@
 import tiktoken
 import pandas as pd
 
-from utils.logger import Logger
+from carbontax.utils.logger import Logger
 
 class RecursiveTextSplitter:
     def __init__(

@@ -30,7 +30,7 @@ import os
 
 import pandas as pd
 
-from taxonomy import MEASURE_IDS, GOVERNANCE_FLAGS
+from carbontax.taxonomy import MEASURE_IDS, GOVERNANCE_FLAGS
 
 DEFAULT_V1        = "output/clean_output_pilot_batch_tier2.csv"
 DEFAULT_V2        = "output/parsed_v2_combined.csv"
@@ -176,7 +176,7 @@ def compare(
     return result
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser(description="Compare v1 vs v2 adoption rates")
     parser.add_argument("--v1",        default=DEFAULT_V1,        help="v1 tier2 output CSV")
     parser.add_argument("--v2",        default=DEFAULT_V2,        help="v2 parsed output CSV")
@@ -191,3 +191,7 @@ if __name__ == "__main__":
         dest_path=args.dest,
         threshold=args.threshold,
     )
+
+
+if __name__ == "__main__":
+    main()

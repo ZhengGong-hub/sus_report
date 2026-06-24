@@ -12,8 +12,8 @@ from typing import Optional
 
 import pandas as pd
 
-from utils.llm_schemas import FILTER_SCHEMA
-from utils.llm_wrapper import LLMWrapper, Provider
+from carbontax.schemas import FILTER_SCHEMA
+from carbontax.utils.llm import LLMWrapper, Provider
 
 
 class SemanticFilter:

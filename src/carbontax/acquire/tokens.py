@@ -1,7 +1,10 @@
 import requests
 import os
 import json
-from logger import logger
+
+from carbontax.utils.logger import Logger
+
+logger = Logger.get("acquire.tokens")
 
 def quick_refresh_and_save_token(token_path="tokens/token_current.json"):
     """Refreshes the access token using stored refresh token and saves new tokens to file."""

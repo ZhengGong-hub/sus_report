@@ -38,7 +38,7 @@ import re
 
 import pandas as pd
 
-from taxonomy import MEASURE_IDS, GOVERNANCE_FLAGS, TIER1_BUCKETS
+from carbontax.taxonomy import MEASURE_IDS, GOVERNANCE_FLAGS, TIER1_BUCKETS
 
 DEFAULT_OUTPUT = "output/output_pilot_batch_combined.csv"
 DEFAULT_REF    = "to_batch_pilot/pilot_batch_combined_ref.parquet"
@@ -159,11 +159,15 @@ def parse_output(
     return result
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Parse v2 combined batch output")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Parse combined batch output")
     parser.add_argument("--output", default=DEFAULT_OUTPUT, help="BatchManager output CSV")
     parser.add_argument("--ref",    default=DEFAULT_REF,    help="Reference parquet")
     parser.add_argument("--dest",   default=DEFAULT_DEST,   help="Destination CSV path")
     args = parser.parse_args()
 
     parse_output(output_path=args.output, ref_path=args.ref, dest_path=args.dest)
+
+
+if __name__ == "__main__":
+    main()

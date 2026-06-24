@@ -6,10 +6,12 @@ import time
 from datetime import datetime, timedelta
 import glob
 
-from logger import logger
+from carbontax.utils.logger import Logger
 # https://help.edgar-online.com/edgar/formtypes.asp
 
-from refresh import quick_refresh_and_save_token
+from carbontax.acquire.tokens import quick_refresh_and_save_token
+
+logger = Logger.get("acquire.pdfs")
 
 # --- CONFIGURATION ---
 BASE_URL = "https://api-ciq.marketintelligence.spglobal.com/gds/documents/api/v1"
@@ -162,7 +164,7 @@ def download_files(
             logger.info(f"Failed to download ID {filing_id}: {file_response.status_code}")
 
 
-if __name__ == "__main__":
+def main():
     # create_intermed_folders()
 
     # Roll every 2 months from 2005-01-01 to today, in window [start, end), e.g., Jan 1 to Mar 1 (exclusive)
@@ -235,3 +237,7 @@ if __name__ == "__main__":
         logger.info(f"from {start} to {end}")
         logger.info(f"companyids: {companyids}")
         logger.info("--------------------------------")
+
+
+if __name__ == "__main__":
+    main()
