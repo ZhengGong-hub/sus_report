@@ -1,3 +1,7 @@
+# the strategy is such that 
+#   I first have the companyids of all the US companies which are a lot: let's say more than 10 thousands
+#   then I basically split them into a list of 10 elements each.
+#   and then for each 10 companies, i pull down their filings of sustainability reports with an rolling time window of 3 months, starting from 2005-01-01 to today.
 import requests
 import json
 import pandas as pd

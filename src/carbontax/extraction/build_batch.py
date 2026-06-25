@@ -6,13 +6,13 @@ single schema. Reads the same reference parquet used for v1 so the chunk set
 is identical (required for the v1/v2 comparison in compare_v1_v2.py).
 
 Output:
-  to_batch_pilot/pilot_batch_combined.jsonl        — batch input
-  to_batch_pilot/pilot_batch_combined_ref.parquet  — reference (join key)
+  batch_folder/pilot_batch_combined.jsonl        — batch input
+  batch_folder/pilot_batch_combined_ref.parquet  — reference (join key)
 
 Usage:
   python build_batch.py
-  python build_batch.py --ref to_batch_pilot/pilot_batch_ref.parquet
-                        --out to_batch_pilot/pilot_batch_combined.jsonl
+  python build_batch.py --ref batch_folder/pilot_batch_ref.parquet
+                        --out batch_folder/pilot_batch_combined.jsonl
                         --model gpt-5-mini
 """
 
@@ -30,10 +30,10 @@ from carbontax.taxonomy import (
     build_combined_system_prompt,
 )
 
-DEFAULT_REF     = "to_batch_pilot/pilot_batch_ref.parquet"
-DEFAULT_OUT     = "to_batch_pilot/pilot_batch_combined.jsonl"
-DEFAULT_REF_OUT = "to_batch_pilot/pilot_batch_combined_ref.parquet"
-DEFAULT_MODEL   = "gpt-5-mini"
+DEFAULT_REF     = "batch_folder/pilot_batch_ref.parquet"
+DEFAULT_OUT     = "batch_folder/pilot_batch_combined.jsonl"
+DEFAULT_REF_OUT = "batch_folder/pilot_batch_combined_ref.parquet"
+DEFAULT_MODEL   = "gpt-5.4-mini"
 
 
 def build_request(chunk_id: str, chunk_text: str, model: str, schema: dict, system_prompt: str) -> dict:

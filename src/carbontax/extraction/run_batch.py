@@ -12,13 +12,12 @@ Pipeline order (run from repo root):
 
 from openai_batch_wrapper.batch_manager import BatchManager
 
-JOB_ID     = "pilot_batch_combined"
-INPUT_PATH = f"to_batch_pilot/{JOB_ID}.jsonl"
+INPUT_PATH = f"batch_folder/pilot_batch_combined.jsonl"
 
 
 def main() -> None:
     batch_manager = BatchManager(
-        job_id=JOB_ID,
+        job_id="pilot_batch_combined",
         input_jsonl_path=INPUT_PATH,
         batch_task_reset=False,
     )
