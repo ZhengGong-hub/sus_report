@@ -1,9 +1,9 @@
 """
 parse_output.py — flatten combined batch output to analysis-ready columns.
 
-Input:
-  output/output_pilot_batch_combined.csv   (produced by BatchManager.get_output_file)
-  to_batch_pilot/pilot_batch_combined_ref.parquet
+Input (under the run folder batch_folder/<run_name>/):
+  output_pilot_batch_combined.csv   (produced by BatchManager.get_output_file)
+  pilot_batch_combined_ref.parquet
 
 Output columns (one row per chunk):
   [ref columns]  filingId, companyid, companyname, filingDate, chunks, chunk_ids,
@@ -22,10 +22,11 @@ Output columns (one row per chunk):
   [meta]         model_y, prompt_tokens, completion_tokens
 
 Usage:
-  python parse_v2_output.py
-  python parse_v2_output.py --output output/output_pilot_batch_combined.csv
-                            --ref    to_batch_pilot/pilot_batch_combined_ref.parquet
-                            --dest   output/parsed_v2_combined.csv
+  python parse_v2_output.py --run-name pilot
+  python parse_v2_output.py --run-name pilot
+                            --output batch_folder/pilot/output_pilot_batch_combined.csv
+                            --ref    batch_folder/pilot/pilot_batch_combined_ref.parquet
+                            --dest   batch_folder/pilot/parsed_v2_combined.csv
 """
 
 from __future__ import annotations
@@ -38,11 +39,10 @@ import re
 
 import pandas as pd
 
+from carbontax.extraction.paths import combined_ref, output_csv, parsed_csv
 from carbontax.taxonomy import MEASURE_IDS, GOVERNANCE_FLAGS, TIER1_BUCKETS
 
-DEFAULT_OUTPUT = "output/output_pilot_batch_combined.csv"
-DEFAULT_REF    = "to_batch_pilot/pilot_batch_combined_ref.parquet"
-DEFAULT_DEST   = "output/parsed_v2_combined.csv"
+DEFAULT_RUN_NAME = "pilot"
 
 _ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
@@ -119,9 +119,9 @@ def flatten_row(row: pd.Series) -> dict:
 
 
 def parse_output(
-    output_path: str = DEFAULT_OUTPUT,
-    ref_path:    str = DEFAULT_REF,
-    dest_path:   str = DEFAULT_DEST,
+    output_path: str = output_csv(DEFAULT_RUN_NAME),
+    ref_path:    str = combined_ref(DEFAULT_RUN_NAME),
+    dest_path:   str = parsed_csv(DEFAULT_RUN_NAME),
 ) -> pd.DataFrame:
     if not os.path.exists(output_path):
         raise FileNotFoundError(
@@ -161,12 +161,17 @@ def parse_output(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Parse combined batch output")
-    parser.add_argument("--output", default=DEFAULT_OUTPUT, help="BatchManager output CSV")
-    parser.add_argument("--ref",    default=DEFAULT_REF,    help="Reference parquet")
-    parser.add_argument("--dest",   default=DEFAULT_DEST,   help="Destination CSV path")
+    parser.add_argument("--run-name", default=DEFAULT_RUN_NAME, help="Run folder name under batch_folder/")
+    parser.add_argument("--output", default=None, help="BatchManager output CSV (defaults to run folder)")
+    parser.add_argument("--ref",    default=None, help="Reference parquet (defaults to run folder)")
+    parser.add_argument("--dest",   default=None, help="Destination CSV path (defaults to run folder)")
     args = parser.parse_args()
 
-    parse_output(output_path=args.output, ref_path=args.ref, dest_path=args.dest)
+    parse_output(
+        output_path=args.output or output_csv(args.run_name),
+        ref_path=args.ref       or combined_ref(args.run_name),
+        dest_path=args.dest     or parsed_csv(args.run_name),
+    )
 
 
 if __name__ == "__main__":

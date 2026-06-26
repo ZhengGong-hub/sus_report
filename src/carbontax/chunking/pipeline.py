@@ -118,6 +118,17 @@ def build_reference(config: dict) -> str:
     else:
         raise ValueError(f"Invalid identifier: {identifier}")
 
+    # Drop filings that map to >1 companyid in the mapping CSV: the metadata
+    # re-join below would fan every chunk out into one row per company,
+    # producing duplicate chunk_ids (custom_ids) in the batch. Tiny sample, so
+    # we exclude them rather than disambiguate.
+    counts = _load_mapping(fileids=fileids).groupby("filingId")["companyid"].nunique()
+    ambiguous = set(counts[counts > 1].index)
+    if ambiguous:
+        logger.warning("Dropping %d filing(s) mapped to multiple companyids: %s",
+                       len(ambiguous), sorted(ambiguous))
+        fileids = [f for f in fileids if f not in ambiguous]
+
     ref_frames: list[pd.DataFrame] = []
     for fileid in fileids:
         if not os.path.exists(f"files/{fileid}.pdf"):

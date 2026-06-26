@@ -5,14 +5,14 @@ One request per chunk; combined tier1 + tier2 + governance + evidence in a
 single schema. Reads the same reference parquet used for v1 so the chunk set
 is identical (required for the v1/v2 comparison in compare_v1_v2.py).
 
-Output:
-  batch_folder/pilot_batch_combined.jsonl        — batch input
-  batch_folder/pilot_batch_combined_ref.parquet  — reference (join key)
+Output (under the run folder batch_folder/<run_name>/):
+  pilot_batch_combined.jsonl        — batch input
+  pilot_batch_combined_ref.parquet  — reference (join key)
 
 Usage:
-  python build_batch.py
-  python build_batch.py --ref batch_folder/pilot_batch_ref.parquet
-                        --out batch_folder/pilot_batch_combined.jsonl
+  python build_batch.py --run-name pilot
+  python build_batch.py --run-name pilot
+                        --ref to_batch_pilot/pilot_batch_ref.parquet
                         --model gpt-5-mini
 """
 
@@ -24,16 +24,16 @@ import os
 
 import pandas as pd
 
+from carbontax.extraction.paths import batch_jsonl, combined_ref, run_dir
 from carbontax.taxonomy import (
     PROMPT_VERSION,
     build_combined_schema,
     build_combined_system_prompt,
 )
 
-DEFAULT_REF     = "batch_folder/pilot_batch_ref.parquet"
-DEFAULT_OUT     = "batch_folder/pilot_batch_combined.jsonl"
-DEFAULT_REF_OUT = "batch_folder/pilot_batch_combined_ref.parquet"
-DEFAULT_MODEL   = "gpt-5.4-mini"
+DEFAULT_REF      = "to_batch_pilot/pilot_batch_ref.parquet"
+DEFAULT_RUN_NAME = "pilot"
+DEFAULT_MODEL    = "gpt-5.4-mini"
 
 
 def build_request(chunk_id: str, chunk_text: str, model: str, schema: dict, system_prompt: str) -> dict:
@@ -57,18 +57,20 @@ def build_request(chunk_id: str, chunk_text: str, model: str, schema: dict, syst
 
 
 def build_batch(
+    run_name: str = DEFAULT_RUN_NAME,
     ref_path: str = DEFAULT_REF,
-    out_path: str = DEFAULT_OUT,
-    ref_out_path: str = DEFAULT_REF_OUT,
     model: str = DEFAULT_MODEL,
 ) -> None:
+    out_path     = batch_jsonl(run_name)
+    ref_out_path = combined_ref(run_name)
+
     ref_df = pd.read_parquet(ref_path)
     print(f"Loaded {len(ref_df)} chunks from {ref_path}")
 
     schema        = build_combined_schema()
     system_prompt = build_combined_system_prompt()
 
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    os.makedirs(run_dir(run_name), exist_ok=True)
 
     n_written = 0
     with open(out_path, "w", encoding="utf-8") as fh:
@@ -94,14 +96,14 @@ def build_batch(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build combined-call batch JSONL")
-    parser.add_argument("--ref",   default=DEFAULT_REF,     help="Input reference parquet")
-    parser.add_argument("--out",   default=DEFAULT_OUT,     help="Output JSONL path")
-    parser.add_argument("--model", default=DEFAULT_MODEL,   help="OpenAI model id")
+    parser.add_argument("--run-name", default=DEFAULT_RUN_NAME, help="Run folder name under batch_folder/")
+    parser.add_argument("--ref",      default=DEFAULT_REF,      help="Input reference parquet")
+    parser.add_argument("--model",    default=DEFAULT_MODEL,    help="OpenAI model id")
     args = parser.parse_args()
 
     build_batch(
+        run_name=args.run_name,
         ref_path=args.ref,
-        out_path=args.out,
         model=args.model,
     )
 
