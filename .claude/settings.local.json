@@ -13,7 +13,8 @@
       "Bash(pip show *)",
       "Bash(.venv/bin/pip show *)",
       "Bash(.venv/bin/python3 build_v2_batch.py)",
-      "Bash(.venv/bin/python3 -c \"from taxonomy import V1_MEASURE_IDS, MEASURE_IDS; print\\('v1:', len\\(V1_MEASURE_IDS\\), 'v2:', len\\(MEASURE_IDS\\)\\)\")"
+      "Bash(.venv/bin/python3 -c \"from taxonomy import V1_MEASURE_IDS, MEASURE_IDS; print\\('v1:', len\\(V1_MEASURE_IDS\\), 'v2:', len\\(MEASURE_IDS\\)\\)\")",
+      "Bash(python -c ' *)"
     ]
   }
 }

@@ -28,14 +28,16 @@ dependencies = [
 ]
 
 # Console entry points — run from the repo root (scripts use relative data paths).
-# Pipeline order: acquire → mapping → chunk → build → run → (wait) → parse → compare
+# Pipeline order: acquire → mapping → chunk → build → run → (wait) → download → parse → report → compare
 [project.scripts]
-carbontax-acquire = "carbontax.acquire.pdfs:main"
+carbontax-acquire = "carbontax.acquire.download_pdf_file:main"
 carbontax-mapping = "carbontax.acquire.mapping:main"
 carbontax-chunk   = "carbontax.chunking.pipeline:main"
 carbontax-build   = "carbontax.extraction.build_batch:main"
 carbontax-run     = "carbontax.extraction.run_batch:main"
+carbontax-download = "carbontax.extraction.download_batch:main"
 carbontax-parse   = "carbontax.extraction.parse_output:main"
+carbontax-report  = "carbontax.analysis.excel:main"
 carbontax-compare = "carbontax.analysis.compare:main"
 
 [tool.black]

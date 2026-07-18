@@ -4,11 +4,12 @@ Returns a block-level DataFrame (page_ind, block_ind, text, token_length).
 """
 import logging
 import re
-from typing import Optional
 
 import fitz
 import pandas as pd
 import tiktoken
+
+logger = logging.getLogger(__name__)
 
 
 class PDFParser:
@@ -20,11 +21,9 @@ class PDFParser:
         self,
         min_block_tokens: int = 5,
         min_block_chars: int = 30,
-        logger: Optional[logging.Logger] = None,
     ):
         self.min_block_tokens = min_block_tokens
         self.min_block_chars = min_block_chars
-        self._log = logger or logging.getLogger(__name__)
         self._enc = tiktoken.get_encoding("cl100k_base")
 
     @staticmethod
@@ -61,7 +60,7 @@ class PDFParser:
         Extract blocks from PDF, clean and prune.
         Returns DataFrame with columns: page_ind, block_ind, text, token_length.
         """
-        self._log.info("Parsing PDF: %s", pdf_path)
+        logger.info("Parsing PDF: %s", pdf_path)
 
         doc = fitz.open(pdf_path)
         rows = []
@@ -73,5 +72,5 @@ class PDFParser:
 
         df = pd.DataFrame(rows, columns=["page_ind", "block_ind", "text"])
         df = self.add_token_length(self._prune_blocks(df))
-        self._log.info("Kept %d blocks after cleaning", len(df))
+        logger.info("Kept %d blocks after cleaning", len(df))
         return df

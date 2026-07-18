@@ -33,16 +33,13 @@ from __future__ import annotations
 
 import argparse
 import ast
-import json
 import os
 import re
 
 import pandas as pd
 
-from carbontax.extraction.paths import combined_ref, output_csv, parsed_csv
+from carbontax.extraction.paths import DEFAULT_RUN_NAME, combined_ref, output_csv, parsed_csv
 from carbontax.taxonomy import MEASURE_IDS, GOVERNANCE_FLAGS, TIER1_BUCKETS
-
-DEFAULT_RUN_NAME = "pilot"
 
 _ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
@@ -54,33 +51,22 @@ def _clean(v: object) -> object:
 
 
 def _parse_json_col(v: object) -> dict:
+    """Parse a dict cell. The batch output stores dicts as Python reprs
+    (single quotes, True/False), so ast.literal_eval is the right parser;
+    a malformed cell raises rather than being silently dropped."""
     if pd.isna(v) or v == "":
         return {}
     if isinstance(v, dict):
         return v
-    try:
-        return json.loads(str(v))
-    except Exception:
-        try:
-            return ast.literal_eval(str(v))
-        except Exception:
-            return {}
+    return ast.literal_eval(str(v))
 
 
 def _parse_evidence(v: object) -> dict[str, dict]:
     """Return {measure_id: {quote, page}} from the evidence array."""
     if pd.isna(v) or v == "":
         return {}
-    try:
-        arr = json.loads(str(v)) if isinstance(v, str) else v
-    except Exception:
-        try:
-            arr = ast.literal_eval(str(v))
-        except Exception:
-            return {}
+    arr = v if isinstance(v, list) else ast.literal_eval(str(v))
     result: dict[str, dict] = {}
-    if not isinstance(arr, list):
-        return result
     for item in arr:
         if isinstance(item, dict) and "measure" in item:
             mid = item["measure"]
@@ -119,10 +105,15 @@ def flatten_row(row: pd.Series) -> dict:
 
 
 def parse_output(
-    output_path: str = output_csv(DEFAULT_RUN_NAME),
-    ref_path:    str = combined_ref(DEFAULT_RUN_NAME),
-    dest_path:   str = parsed_csv(DEFAULT_RUN_NAME),
+    output_path: str | None = None,
+    ref_path:    str | None = None,
+    dest_path:   str | None = None,
+    run_name:    str = DEFAULT_RUN_NAME,
 ) -> pd.DataFrame:
+    output_path = output_path or output_csv(run_name)
+    ref_path    = ref_path    or combined_ref(run_name)
+    dest_path   = dest_path   or parsed_csv(run_name)
+
     if not os.path.exists(output_path):
         raise FileNotFoundError(
             f"Output CSV not found: {output_path}\n"
@@ -153,6 +144,12 @@ def parse_output(
         lambda col: col.map(_clean) if col.dtype == object else col
     )
 
+    # page numbers are ints; keep them as nullable Int64 so missing pages stay
+    # blank instead of rendering as "11.0" via float NaN promotion.
+    page_cols = [c for c in result.columns if c.endswith("_page")]
+    for c in page_cols:
+        result[c] = pd.to_numeric(result[c], errors="coerce").astype("Int64")
+
     os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
     result.to_csv(dest_path, index=False)
     print(f"Wrote {len(result)} rows → {dest_path}")
@@ -168,9 +165,10 @@ def main() -> None:
     args = parser.parse_args()
 
     parse_output(
-        output_path=args.output or output_csv(args.run_name),
-        ref_path=args.ref       or combined_ref(args.run_name),
-        dest_path=args.dest     or parsed_csv(args.run_name),
+        output_path=args.output,
+        ref_path=args.ref,
+        dest_path=args.dest,
+        run_name=args.run_name,
     )
 
 

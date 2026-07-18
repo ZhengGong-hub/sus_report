@@ -10,24 +10,6 @@ from __future__ import annotations
 
 PROMPT_VERSION = "v2"
 
-# ── v1 measure list (frozen — for reference and compare_v1_v2.py) ─────────────
-# Differences from v2:
-#   dropped : 247_cfe
-#   split   : c1_purchased_goods → c1_supplier_engagement + c1_material_substitution
-#   added   : renewable_electricity_general, packaging
-
-V1_MEASURE_IDS: list[str] = [
-    "energy_efficiency", "fuel_switching", "onsite_renewables",
-    "fgas_substitution", "methane_fugitive", "process_emissions",
-    "ppa", "rec_goo", "247_cfe", "low_carbon_heat",
-    "c1_purchased_goods", "c2_capital_goods", "c3_fuel_energy",
-    "c4_upstream_transport", "c5_waste_ops", "c6_business_travel",
-    "c7_commuting", "c8_upstream_leased",
-    "c9_downstream_transport", "c10_processing", "c11_use_phase",
-    "c12_eol", "c13_downstream_leased", "c14_franchises", "c15_investments",
-    "nbs", "tech_cdr", "voluntary_offsets",
-]
-
 # ── Tier-1 scope buckets ──────────────────────────────────────────────────────
 
 TIER1_BUCKETS: dict[str, str] = {
@@ -200,72 +182,6 @@ def build_combined_schema() -> dict:
                 "evidence": _evidence_array_schema(),
             },
             "required": ["tier1", "tier2", "governance", "evidence"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    }
-
-
-# ── Back-compat schemas (v1 format: {adopted, quote, page} per measure) ───────
-
-def _measure_schema_v1() -> dict:
-    return {
-        "type": "object",
-        "properties": {
-            "adopted": {"type": "boolean"},
-            "quote":   {"type": ["string", "null"]},
-            "page":    {"type": ["integer", "null"]},
-        },
-        "required": ["adopted", "quote", "page"],
-        "additionalProperties": False,
-    }
-
-
-def build_tier1_schema() -> dict:
-    """v1-compatible Tier-1-only schema ({adopted, quote, page} per bucket)."""
-    props = {b: _measure_schema_v1() for b in TIER1_BUCKETS}
-    return {
-        "name": "research_question",
-        "schema": {
-            "type": "object",
-            "properties": {
-                "tier1": {
-                    "type": "object",
-                    "properties": props,
-                    "required": list(props),
-                    "additionalProperties": False,
-                }
-            },
-            "required": ["tier1"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    }
-
-
-def build_tier2_schema() -> dict:
-    """v1-compatible Tier-2 + governance schema ({adopted, quote, page} per measure)."""
-    t2_props  = {mid: _measure_schema_v1() for mid in MEASURE_IDS}
-    gov_props = {flag: _measure_schema_v1() for flag in GOVERNANCE_FLAGS}
-    return {
-        "name": "research_question",
-        "schema": {
-            "type": "object",
-            "properties": {
-                "tier2": {
-                    "type": "object",
-                    "properties": t2_props,
-                    "required": list(t2_props),
-                    "additionalProperties": False,
-                },
-                "governance": {
-                    "type": "object",
-                    "properties": gov_props,
-                    "required": list(gov_props),
-                    "additionalProperties": False,
-                },
-            },
-            "required": ["tier2", "governance"],
             "additionalProperties": False,
         },
         "strict": True,

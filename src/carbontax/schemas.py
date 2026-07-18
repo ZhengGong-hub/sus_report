@@ -12,17 +12,6 @@ class LLMCallSchema(BaseModel):
     schema: dict  # noqa: A003 — intentional; shadows BaseModel.schema() (cosmetic warning)
 
 
-SUMMARY_SCHEMA = LLMCallSchema(
-    prompt="Summarize the following text and extract key points. Respond using the JSON schema.",
-    schema={
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string"},
-        },
-        "required": ["summary"],
-    },
-)
-
 FILTER_SCHEMA = LLMCallSchema(
     prompt=(
         "Decide whether the text discusses specific corporate efforts to reduce "

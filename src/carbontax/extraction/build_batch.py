@@ -24,16 +24,16 @@ import os
 
 import pandas as pd
 
-from carbontax.extraction.paths import batch_jsonl, combined_ref, run_dir
+from carbontax.extraction.paths import DEFAULT_RUN_NAME, batch_jsonl, combined_ref, run_dir
 from carbontax.taxonomy import (
     PROMPT_VERSION,
     build_combined_schema,
     build_combined_system_prompt,
 )
+from carbontax.utils.llm import DEFAULT_MODELS, Provider
 
-DEFAULT_REF      = "to_batch_pilot/pilot_batch_ref.parquet"
-DEFAULT_RUN_NAME = "pilot"
-DEFAULT_MODEL    = "gpt-5.4-mini"
+DEFAULT_REF   = "to_batch_pilot/pilot_batch_ref.parquet"
+DEFAULT_MODEL = DEFAULT_MODELS[Provider.OPENAI]
 
 
 def build_request(chunk_id: str, chunk_text: str, model: str, schema: dict, system_prompt: str) -> dict:

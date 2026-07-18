@@ -10,6 +10,8 @@ from openai import OpenAI
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 
 class Provider(str, Enum):
     OPENAI = "openai"
@@ -17,7 +19,7 @@ class Provider(str, Enum):
 
 
 DEFAULT_MODELS: Dict[Provider, str] = {
-    Provider.OPENAI: "gpt-5-mini",
+    Provider.OPENAI: "gpt-5.4-mini",
     Provider.GEMINI: "gemini-2.0-flash",
 }
 
@@ -32,11 +34,9 @@ class LLMWrapper:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         timeout: int = 60,
-        logger: Optional[logging.Logger] = None,
     ):
         self.provider = provider
         self.model = model or DEFAULT_MODELS[provider]
-        self._logger = logger or logging.getLogger(__name__)
 
         api_key = api_key or self._default_api_key(provider)
         if not api_key:
@@ -78,7 +78,7 @@ class LLMWrapper:
             {"role": "user", "content": text_chunk},
         ]
 
-        self._logger.debug(
+        logger.debug(
             "LLM structured call: model=%s, chunk_len=%d, schema=%s",
             self.model,
             len(text_chunk),
@@ -98,56 +98,10 @@ class LLMWrapper:
         )
 
         if not response.choices:
-            self._logger.error("Model returned no choices (structured call).")
-            raise ValueError("Model returned no choices.")
+            raise ValueError("Model returned no choices (structured call).")
 
         content = response.choices[0].message.content
         if not content:
-            self._logger.error("Model returned empty response (structured call).")
-            raise ValueError("Model returned empty response.")
+            raise ValueError("Model returned empty response (structured call).")
 
-        # The OpenAI API returns JSON text; parse it.
-        if isinstance(content, list):
-            raw = "".join(str(part) for part in content)
-        else:
-            raw = str(content)
-
-        try:
-            data: Dict[str, Any] = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            self._logger.error("Failed to parse structured JSON response: %s", raw)
-            raise ValueError("Failed to parse structured JSON response.") from exc
-
-        return data
-
-    def create_jsonl_for_batch(
-        self,
-        chunk: str,
-        custom_id: str,
-        prompt: str | None = None,
-        schema: Dict[str, Any] | None = None,
-        schema_name: str = "schema",
-    ) -> Dict[str, Any]:
-        """
-        Serialize a text chunk to OpenAI batch-ready JSONL.
-        """
-        obj = {
-            "custom_id": f"{custom_id}",
-            "method": "POST",
-            "url": "/v1/chat/completions",
-            "body": {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": chunk}
-                ],
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": schema_name,
-                        "schema": schema,
-                    },
-                }
-            }
-        }
-        return obj
+        return json.loads(content)

@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import os
 
-BATCH_ROOT = "batch_folder"
-JOB_ID     = "pilot_batch_combined"
+BATCH_ROOT       = "batch_folder"
+JOB_ID           = "pilot_batch_combined"
+DEFAULT_RUN_NAME = "pilot"
 
 
 def run_dir(run_name: str) -> str:
@@ -41,3 +42,7 @@ def output_csv(run_name: str) -> str:
 
 def parsed_csv(run_name: str) -> str:
     return os.path.join(run_dir(run_name), "parsed_v2_combined.csv")
+
+
+def report_xlsx(run_name: str) -> str:
+    return os.path.join(run_dir(run_name), f"combined_{run_name}_batch.xlsx")

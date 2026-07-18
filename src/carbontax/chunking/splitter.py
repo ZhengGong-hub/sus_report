@@ -1,22 +1,25 @@
-import tiktoken
-import pandas as pd
+from __future__ import annotations
 
-from carbontax.utils.logger import Logger
+import logging
+
+import pandas as pd
+import tiktoken
+
+logger = logging.getLogger(__name__)
+
 
 class RecursiveTextSplitter:
     def __init__(
         self,
         max_length: int = 500,
         overlap: int = 100,
-        separators=None,
+        separators: list[str] | None = None,
         encoding_name: str = "cl100k_base",
-        logger: Logger = None,
     ):
         self.max_length = max_length
         self.overlap = overlap
-        self.separators = separators or ["\n\n",]
+        self.separators = separators or ["\n\n"]
         self.tokenizer = tiktoken.get_encoding(encoding_name)
-        self.logger = logger
 
     def count_tokens(self, text: str) -> int:
         return len(self.tokenizer.encode(text))
@@ -50,9 +53,8 @@ class RecursiveTextSplitter:
 
         # Logging check for '\n\n'
         total_newline_double = sum(chunk.count("\n\n") for chunk in result_chunks)
-        self.logger.info(f"Total '\\n\\n' occurrences in all chunks: {total_newline_double}")
+        logger.info("Total '\\n\\n' occurrences in all chunks: %d", total_newline_double)
 
-        # convert result chunks to df 
         result_chunks_df = pd.DataFrame(result_chunks, columns=["chunk"])
         result_chunks_df["chunk_id"] = [f"{chunk_id_prefix}_{i}" for i in range(len(result_chunks_df))]
         return result_chunks_df

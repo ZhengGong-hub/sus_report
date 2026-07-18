@@ -30,10 +30,11 @@ import os
 
 import pandas as pd
 
+from carbontax.extraction.paths import DEFAULT_RUN_NAME, parsed_csv
 from carbontax.taxonomy import MEASURE_IDS, GOVERNANCE_FLAGS
 
 DEFAULT_V1        = "output/clean_output_pilot_batch_tier2.csv"
-DEFAULT_V2        = "output/parsed_v2_combined.csv"
+DEFAULT_V2        = parsed_csv(DEFAULT_RUN_NAME)
 DEFAULT_DEST      = "output/compare_v1_v2.csv"
 DEFAULT_THRESHOLD = 5.0
 
@@ -46,20 +47,12 @@ V2_NEW      = {"renewable_electricity_general", "c1_supplier_engagement",
 
 
 def _parse_dict_col(series: pd.Series) -> pd.DataFrame:
-    """Expand a column of stringified dicts into a flat boolean DataFrame."""
-    def _adopted(v: object) -> bool | None:
-        if pd.isna(v) or v == "":
-            return None
-        d = ast.literal_eval(str(v)) if isinstance(v, str) else v
-        return d.get("adopted")
-
+    """Expand a column of stringified dicts into a flat boolean DataFrame.
+    Cells are Python reprs; a malformed cell raises rather than being dropped."""
     def parse(v: object) -> dict:
         if pd.isna(v) or v == "":
             return {}
-        try:
-            return ast.literal_eval(str(v)) if isinstance(v, str) else v
-        except Exception:
-            return {}
+        return ast.literal_eval(str(v)) if isinstance(v, str) else v
 
     parsed = series.apply(parse)
     keys: dict[str, None] = {}
@@ -135,10 +128,11 @@ def compare(
     v1_rates = load_v1_rates(v1_path)
     v2_rates = load_v2_rates(v2_path)
 
+    # canonical taxonomy order first; v1-only measures (dropped/split) at the end
+    order = {m: i for i, m in enumerate(MEASURE_IDS + GOVERNANCE_FLAGS)}
     all_measures = sorted(
         set(v1_rates.index) | set(v2_rates.index),
-        key=lambda m: (MEASURE_IDS + GOVERNANCE_FLAGS + sorted(set(v1_rates.index))).index(m)
-        if m in (MEASURE_IDS + GOVERNANCE_FLAGS) else 999,
+        key=lambda m: (order.get(m, len(order)), m),
     )
 
     rows = []

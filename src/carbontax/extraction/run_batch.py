@@ -11,7 +11,9 @@ Pipeline order (run from repo root):
   carbontax-build --run-name <name>     # parquet → batch JSONL     (extraction.build_batch)
   carbontax-run   --run-name <name>     # upload + submit           (this file)
   (wait for OpenAI to finish the batch)
+  carbontax-download --run-name <name>  # poll + download output    (extraction.download_batch)
   carbontax-parse --run-name <name>     # output → flat CSV         (extraction.parse_output)
+  carbontax-report --run-name <name>    # flat CSV → styled .xlsx   (analysis.excel)
   carbontax-compare                     # adoption-rate delta vs v1 (analysis.compare)
 """
 
@@ -19,9 +21,7 @@ import argparse
 
 from openai_batch_wrapper.batch_manager import BatchManager
 
-from carbontax.extraction.paths import JOB_ID, batch_jsonl, run_dir
-
-DEFAULT_RUN_NAME = "pilot"
+from carbontax.extraction.paths import DEFAULT_RUN_NAME, JOB_ID, batch_jsonl, run_dir
 
 
 def main() -> None:

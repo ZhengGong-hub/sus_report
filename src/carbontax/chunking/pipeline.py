@@ -33,6 +33,7 @@ Run from the repo root (relative paths: files/, mapping_data/):
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 
@@ -44,9 +45,9 @@ from carbontax.chunking.pdf_parser import PDFParser
 from carbontax.chunking.splitter import RecursiveTextSplitter
 from carbontax.taxonomy import PROMPT_VERSION
 from carbontax.utils.llm import DEFAULT_MODELS, Provider
-from carbontax.utils.logger import Logger
+from carbontax.utils.logger import setup_logging
 
-logger = Logger.get("chunking.pipeline")
+logger = logging.getLogger(__name__)
 
 MAPPING_CSV = "mapping_data/company_esgfiling_mapping.csv"
 DEFAULT_CONFIG = "config/pilot.yaml"
@@ -62,7 +63,7 @@ def chunk_filing(fileid: str, max_chunks: int | None = None) -> pd.DataFrame:
     """
     logger.info("Processing fileid=%s", fileid)
 
-    parser = PDFParser(logger=logger)
+    parser = PDFParser()
     blocks = parser.parse(f"files/{fileid}.pdf")
     agg_df = blocks.groupby("page_ind", as_index=False).agg({"text": " ".join})
     agg_df = parser.add_token_length(agg_df)
@@ -71,12 +72,12 @@ def chunk_filing(fileid: str, max_chunks: int | None = None) -> pd.DataFrame:
     flat_text = "\n\n".join(
         f"[PAGE {row.page_ind}]\n{row.text}" for row in agg_df.itertuples(index=False)
     )
-    chunks_df = RecursiveTextSplitter(max_length=500, overlap=100, logger=logger).split(
+    chunks_df = RecursiveTextSplitter(max_length=500, overlap=100).split(
         flat_text, chunk_id_prefix=fileid
     )
     logger.info("Recursive split produced %d chunks", len(chunks_df))
 
-    filtered = SemanticFilter(logger=logger).filter(chunks_df, use_llm_classification=False)
+    filtered = SemanticFilter().filter(chunks_df, use_llm_classification=False)
     logger.info("Semantic filter: %d chunks remaining", len(filtered))
 
     if max_chunks is not None and len(filtered) > max_chunks:
@@ -155,6 +156,7 @@ def build_reference(config: dict) -> str:
 
 
 def main() -> None:
+    setup_logging()
     config_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CONFIG
     with open(config_path) as f:
         build_reference(yaml.safe_load(f))
