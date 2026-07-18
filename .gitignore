@@ -94,6 +94,7 @@ secrets/*
 files/*
 intermed/*
 logs/*
+log/*
 *.zip
 *.csv
 *.jsonl

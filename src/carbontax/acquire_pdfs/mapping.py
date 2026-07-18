@@ -1,17 +1,4 @@
-"""
-acquire/mapping.py — aggregate per-batch fileid CSVs into one company↔filing map.
-
-Scans intermed/*/fileids.csv (written during PDF acquisition), concatenates
-them, joins company names, de-duplicates, and writes the canonical mapping that
-the chunking pipeline reads.
-
-Output:
-  mapping_data/company_esgfiling_mapping.csv
-
-Run from the repo root:
-  python -m carbontax.acquire.mapping
-  carbontax-mapping            # console entry point
-"""
+"""Aggregate intermed/*/fileids.csv into the canonical company↔filing mapping CSV."""
 
 import glob
 import os

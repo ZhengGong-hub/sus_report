@@ -1,39 +1,14 @@
-"""
-excel.py — render the combined parsed output into a styled multi-sheet workbook.
-
-Input is the flat CSV from extraction.parse_output (one row per chunk, bare-boolean
-flags plus per-measure _quote/_page evidence). Output mirrors the legacy review
-workbook:
-
-  Tier 1            — chunk-level S1/S2/S3U/S3D/CDR adoption (Yes/No)
-  S1 … CDR          — one sheet per tier-1 bucket, its tier-2 measures with quote+page
-  Governance        — sbti / icp / exec-comp / assurance with quote+page
-  Stats - Adoption  — % of chunks flagged True, per strategy
-  Stats - Coverage  — of chunks where a tier-1 bucket is True, how many also pin a
-                      tier-2 measure (and the unpinpointed remainder)
-  Stats - T1 Accuracy — of chunks where a tier-2 measure is True, how many have the
-                      parent tier-1 bucket False (a tier-1 miss)
-  Raw               — full flat dump
-
-This is the combined-schema successor to legacy/excel.py: flags are bare booleans
-(tier1_S1, not tier1_S1_adopted), evidence carries a page number, and there are no
-per-call notes columns.
-
-Usage (run from repo root):
-  carbontax-report --run-name pilot
-  carbontax-report --run-name pilot --input <parsed.csv> --dest <out.xlsx>
-"""
+"""Parsed CSV → styled review workbook (per-bucket sheets, governance, stats, raw dump)."""
 
 from __future__ import annotations
-
-import argparse
 
 import pandas as pd
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.properties import Outline
 
-from carbontax.extraction.paths import DEFAULT_RUN_NAME, parsed_csv, report_xlsx
+from carbontax.config import load_run_config
+from carbontax.paths import parsed_csv, report_xlsx
 from carbontax.taxonomy import GOVERNANCE_FLAGS, MEASURE_IDS, MEASURE_SCOPE, TIER1_BUCKETS
 
 # tier-1 buckets in canonical order, and the tier-2 measures grouped beneath each
@@ -375,16 +350,8 @@ def build_report(input_path: str, dest_path: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Render combined parsed output to a styled workbook")
-    parser.add_argument("--run-name", default=DEFAULT_RUN_NAME, help="Run folder name under batch_folder/")
-    parser.add_argument("--input", default=None, help="Parsed combined CSV (defaults to run folder)")
-    parser.add_argument("--dest",  default=None, help="Destination .xlsx path (defaults to run folder)")
-    args = parser.parse_args()
-
-    build_report(
-        input_path=args.input or parsed_csv(args.run_name),
-        dest_path=args.dest    or report_xlsx(args.run_name),
-    )
+    run_name = load_run_config()["run_name"]
+    build_report(input_path=parsed_csv(run_name), dest_path=report_xlsx(run_name))
 
 
 if __name__ == "__main__":

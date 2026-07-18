@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "carbontax"
-version = "0.2.0"
+version = "0.3.0"
 description = "LLM-based extraction of corporate carbon-reduction measures from sustainability-report PDFs, classified into a sourced two-tier taxonomy."
 requires-python = ">=3.10"
 authors = [
@@ -27,18 +27,17 @@ dependencies = [
     "openai-batch-wrapper @ git+https://github.com/ZhengGong-hub/openai-batch-wrapper.git@v0.0.5"
 ]
 
-# Console entry points — run from the repo root (scripts use relative data paths).
-# Pipeline order: acquire → mapping → chunk → build → run → (wait) → download → parse → report → compare
+# Console entry points — run from the repo root; all read config/run.yaml (no CLI arguments).
+# Pipeline order: acquire → mapping → prepare → submit → status → (wait) → download → parse → report
 [project.scripts]
-carbontax-acquire = "carbontax.acquire.download_pdf_file:main"
-carbontax-mapping = "carbontax.acquire.mapping:main"
-carbontax-chunk   = "carbontax.chunking.pipeline:main"
-carbontax-build   = "carbontax.extraction.build_batch:main"
-carbontax-run     = "carbontax.extraction.run_batch:main"
-carbontax-download = "carbontax.extraction.download_batch:main"
-carbontax-parse   = "carbontax.extraction.parse_output:main"
-carbontax-report  = "carbontax.analysis.excel:main"
-carbontax-compare = "carbontax.analysis.compare:main"
+carbontax-acquire  = "carbontax.acquire_pdfs.download_pdf_file:main"
+carbontax-mapping  = "carbontax.acquire_pdfs.mapping:main"
+carbontax-prepare  = "carbontax.prepare_batch_input.prepare:main"
+carbontax-submit   = "carbontax.openai_batch.submit_batch:main"
+carbontax-status   = "carbontax.openai_batch.check_status:main"
+carbontax-download = "carbontax.openai_batch.download_batch:main"
+carbontax-parse    = "carbontax.openai_batch.parse_output:main"
+carbontax-report   = "carbontax.analysis.build_report:main"
 
 [tool.black]
 line-length = 88

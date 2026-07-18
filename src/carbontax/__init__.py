@@ -2,13 +2,13 @@
 carbontax — LLM-based extraction of corporate carbon-reduction measures
 from sustainability-report PDFs, classified into a sourced two-tier taxonomy.
 
-Pipeline stages (see README):
-  acquire    → download filings + build the company↔filing mapping
-  chunking   → PDF → filtered text chunks → reference parquet
-  extraction → chunks → combined-call batch → OpenAI → parsed CSV
-  analysis   → v1/v2 comparison and downstream stats
+Pipeline stages (all configured via config/run.yaml, no CLI arguments):
+  acquire_pdfs        → download filings + build the company↔filing mapping
+  prepare_batch_input → PDFs → filtered chunks → reference parquet → batch JSONL
+  openai_batch        → submit → status → download → parse to flat CSV
+  analysis            → parsed CSV → styled review workbook
 
-The taxonomy (single source of truth) lives in `carbontax.taxonomy`.
+What gets extracted lives in `carbontax.taxonomy`; where files live in `carbontax.paths`.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

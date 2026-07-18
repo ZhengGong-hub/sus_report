@@ -1,0 +1,68 @@
+# The one canonical run config — every carbontax command reads this file.
+# Edit here, then run the stage; no command-line arguments anywhere.
+# All parameters are explicit: the code has no hidden defaults, a missing key fails loudly.
+# File locations are derived from run_name: everything lives in batch_folder/<run_name>/.
+
+run_name: pilot
+
+# ── Stage 1: acquire_pdfs — download PDFs from S&P CIQ ────────────────────────
+acquire_pdfs:
+  start_date: "2015-01-01"
+  end_date: "2025-01-01"
+  resume_from: 0          # skip the first N intermed/ batch folders
+  files_dir: files        # where the PDFs land (<filingId>.pdf)
+  init_folders: false     # true = (re)create intermed/ batch folders from company.csv, then stop
+
+# ── Stage 2: prepare_batch_input — PDFs → chunks → batch JSONL (local only) ───
+prepare_batch_input:
+  identifier: companyid   # "fileid" or "companyid"
+  companyid:
+    - 19609
+    - 29325
+    - 34709
+    - 90323
+    - 168151
+    - 218812
+    - 248450
+    - 263232
+    - 270279
+    - 291703
+    - 294382
+    - 297441
+    - 305647
+    - 317627
+    - 328190
+    - 330043
+    - 338134
+    - 343729
+    - 366230
+    - 6569181
+    - 9425271
+    - 27447874
+    - 35962803
+    - 52289160
+    - 208736100
+    - 244370933
+    - 256906841
+    - 273983758
+    - 276763615
+    - 639215906
+  model: gpt-5.4-mini         # stamped into the ref parquet and every batch request
+  max_chunks_per_file: 20     # cap per filing; null = no cap
+  min_page_tokens: 50         # drop pages with fewer tokens before chunking
+  chunk_max_tokens: 500       # splitter window size
+  chunk_overlap_tokens: 100   # splitter overlap between consecutive chunks
+  filter_keywords:            # a chunk must contain at least one (case-insensitive)
+    - carbon
+    - emission
+
+# ── Stage 3: openai_batch — submit → status → download → parse ────────────────
+# No tunable settings: the batch JSONL already carries the model and schema;
+# batch id and file locations are tracked in batch_folder/<run_name>/batch_status.db.
+openai_batch: {}
+
+# ── Stage 4: analysis — parsed CSV → review workbook ──────────────────────────
+# (per-bucket sheets, governance, adoption/coverage/accuracy stats, raw dump)
+# No tunable settings: reads  batch_folder/<run_name>/parsed_v2_combined.csv,
+#                      writes batch_folder/<run_name>/combined_<run_name>_batch.xlsx.
+analysis: {}
