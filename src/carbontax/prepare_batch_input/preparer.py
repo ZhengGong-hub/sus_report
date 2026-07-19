@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from functools import cached_property
 
 import pandas as pd
 
@@ -57,9 +58,8 @@ class BatchInputPreparer:
 
         # join company metadata (companyid, companyname, filingDate) onto every chunk
         reference_df = pd.concat(ref_frames, ignore_index=True)
-        mapping = self._load_mapping(fileids=reference_df["filingId"].unique().tolist())
         reference_df = reference_df.merge(
-            mapping[["companyid", "companyname", "filingDate", "filingId"]],
+            self.mapping[["companyid", "companyname", "filingDate", "filingId"]],
             on="filingId", how="left",
         )
 
@@ -74,7 +74,8 @@ class BatchInputPreparer:
         if identifier == "fileid":
             fileids = self.section["fileid"]
         elif identifier == "companyid":
-            fileids = self._load_mapping(companyids=self.section["companyid"])["filingId"].tolist()
+            mask = self.mapping["companyid"].isin(self.section["companyid"])
+            fileids = self.mapping[mask]["filingId"].tolist()
         else:
             raise ValueError(f"Invalid identifier: {identifier}")
 
@@ -82,7 +83,8 @@ class BatchInputPreparer:
         # re-join in chunk_filings would fan every chunk out into one row per
         # company, producing duplicate chunk_ids (custom_ids) in the batch.
         # Tiny sample, so we exclude them rather than disambiguate.
-        counts = self._load_mapping(fileids=fileids).groupby("filingId")["companyid"].nunique()
+        relevant = self.mapping[self.mapping["filingId"].isin(fileids)]
+        counts = relevant.groupby("filingId")["companyid"].nunique()
         ambiguous = set(counts[counts > 1].index)
         if ambiguous:
             logger.warning("Dropping %d filing(s) mapped to multiple companyids: %s",
@@ -107,7 +109,7 @@ class BatchInputPreparer:
         logger.info("Recursive split produced %d chunks", len(chunks_df))
 
         # keep only carbon/emission-relevant chunks
-        filtered = self.filter.filter(chunks_df, use_llm_classification=False)
+        filtered = self.filter.filter(chunks_df)
         logger.info("Semantic filter: %d chunks remaining", len(filtered))
 
         max_chunks = self.section["max_chunks_per_file"]  # null in YAML = no cap
@@ -123,14 +125,10 @@ class BatchInputPreparer:
             "model": self.model,
         })
 
-    @staticmethod
-    def _load_mapping(companyids: list[int] = None, fileids: list[int] = None) -> pd.DataFrame:
-        df = pd.read_csv(MAPPING_CSV)
-        if companyids is not None:
-            df = df[df["companyid"].isin(companyids)]
-        if fileids is not None:
-            df = df[df["filingId"].isin(fileids)]
-        return df
+    @cached_property
+    def mapping(self) -> pd.DataFrame:
+        """Company/filing mapping CSV, read once per run."""
+        return pd.read_csv(MAPPING_CSV)
 
     # ── step 2: reference parquet → batch JSONL ───────────────────────────────
 
@@ -149,27 +147,24 @@ class BatchInputPreparer:
         out_path = batch_jsonl(self.run_name)
         with open(out_path, "w", encoding="utf-8") as fh:
             for _, row in ref_df.iterrows():
-                request = self._build_request(row["chunk_ids"], row["chunks"], schema, system_prompt)
+                request = {
+                    "custom_id": row["chunk_ids"],
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": {
+                        "model": self.model,
+                        "temperature": 0,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user",   "content": row["chunks"]},
+                        ],
+                        "response_format": {
+                            "type": "json_schema",
+                            "json_schema": schema,
+                        },
+                    },
+                }
                 fh.write(json.dumps(request, ensure_ascii=False) + "\n")
 
         logger.info("Wrote %d requests → %s", len(ref_df), out_path)
         return out_path
-
-    def _build_request(self, chunk_id: str, chunk_text: str, schema: dict, system_prompt: str) -> dict:
-        return {
-            "custom_id": chunk_id,
-            "method": "POST",
-            "url": "/v1/chat/completions",
-            "body": {
-                "model": self.model,
-                "temperature": 0,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user",   "content": chunk_text},
-                ],
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": schema,
-                },
-            },
-        }

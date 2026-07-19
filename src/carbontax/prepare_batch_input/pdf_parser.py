@@ -36,18 +36,21 @@ class PDFParser:
         return text.strip()
 
     def _prune_blocks(self, text_df: pd.DataFrame) -> pd.DataFrame:
-        """Drop footer/header repeats (via text without numbers) and too-short blocks."""
+        """Drop footer/header repeats (via text without numbers) and too-short blocks.
+
+        Keeps the token counts computed for pruning as the `token_length` column.
+        """
         text_df = text_df.copy()
         text_df["_no_num"] = text_df["text"].str.replace(r"\d+", "", regex=True)
         freq = text_df["_no_num"].value_counts()
         repeated = freq[freq > 2].index
         text_df = text_df[~text_df["_no_num"].isin(repeated)]
         text_df["_n"] = text_df["_no_num"].str.len()
-        text_df["_t"] = text_df["text"].apply(lambda t: len(self._enc.encode(t)))
+        text_df["token_length"] = text_df["text"].apply(lambda t: len(self._enc.encode(t)))
         text_df = text_df[
-            (text_df["_n"] > self.min_block_chars) & (text_df["_t"] > self.min_block_tokens)
+            (text_df["_n"] > self.min_block_chars) & (text_df["token_length"] > self.min_block_tokens)
         ]
-        return text_df.drop(columns=["_no_num", "_n", "_t"]).reset_index(drop=True)
+        return text_df.drop(columns=["_no_num", "_n"]).reset_index(drop=True)
 
     def add_token_length(self, text_df: pd.DataFrame) -> pd.DataFrame:
         """Add token_length column (e.g. for use after aggregation)."""
@@ -71,6 +74,6 @@ class PDFParser:
                     rows.append((page_ind, block_ind, self.clean_text_chunk(raw)))
 
         df = pd.DataFrame(rows, columns=["page_ind", "block_ind", "text"])
-        df = self.add_token_length(self._prune_blocks(df))
+        df = self._prune_blocks(df)
         logger.info("Kept %d blocks after cleaning", len(df))
         return df
