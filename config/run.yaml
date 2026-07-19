@@ -5,13 +5,21 @@
 
 run_name: pilot
 
+# ── Shared data locations — files passed between stages ───────────────────────
+data:
+  input:   # external files made outside this repo
+    company_csv: data/input/company.csv  # raw CIQ company-universe export
+  output:  # produced by the pipeline stages
+    intermed_dir: data/output/intermed   # stage-1 state: batch folders of 10 companies each
+    pdfs_dir: data/output/sustain_reports_pdfs                                 # downloaded PDFs (<filingId>.pdf)
+    mapping_csv: data/output/ciq_filing_mapping/company_esgfiling_mapping.csv  # canonical company↔filing mapping
+
 # ── Stage 1: acquire_pdfs — download PDFs from S&P CIQ ────────────────────────
 acquire_pdfs:
   start_date: "2015-01-01"
   end_date: "2025-01-01"
-  resume_from: 0          # skip the first N intermed/ batch folders
-  files_dir: files        # where the PDFs land (<filingId>.pdf)
-  init_folders: false     # true = (re)create intermed/ batch folders from company.csv, then stop
+  resume_from: 0          # skip the first N intermed batch folders
+  init_folders: false     # true = (re)create intermed batch folders from company_csv, then stop
 
 # ── Stage 2: prepare_batch_input — PDFs → chunks → batch JSONL (local only) ───
 prepare_batch_input:

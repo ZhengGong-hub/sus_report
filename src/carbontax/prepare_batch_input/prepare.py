@@ -8,7 +8,8 @@ from carbontax.utils.logger import setup_logging
 def main() -> None:
     setup_logging()
     cfg = load_run_config()
-    BatchInputPreparer(cfg["run_name"], stage_section(cfg, "prepare_batch_input")).run()
+    BatchInputPreparer(cfg["run_name"], stage_section(cfg, "prepare_batch_input"),
+                       cfg["data"]).run()
 
 
 if __name__ == "__main__":

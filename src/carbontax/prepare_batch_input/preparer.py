@@ -16,16 +16,16 @@ from carbontax.taxonomy import PROMPT_VERSION, build_combined_schema, build_comb
 
 logger = logging.getLogger(__name__)
 
-MAPPING_CSV = "mapping_data/company_esgfiling_mapping.csv"
-
 
 class BatchInputPreparer:
 
-    def __init__(self, run_name: str, section: dict):
+    def __init__(self, run_name: str, section: dict, data: dict):
         self.run_name = run_name
         self.section = section
         # all knobs come explicitly from config/run.yaml — a missing key fails loudly
         # model is stamped into the ref parquet AND into every batch request, so both agree
+        self.pdfs_dir = data["output"]["pdfs_dir"]
+        self.mapping_csv = data["output"]["mapping_csv"]
         self.model = section["model"]
         self.min_page_tokens = section["min_page_tokens"]
         self.parser = PDFParser()
@@ -47,13 +47,13 @@ class BatchInputPreparer:
 
         ref_frames: list[pd.DataFrame] = []
         for fileid in fileids:
-            if not os.path.exists(f"files/{fileid}.pdf"):
+            if not os.path.exists(f"{self.pdfs_dir}/{fileid}.pdf"):
                 logger.warning("PDF not found for fileid=%s — skipping", fileid)
                 continue
             ref_frames.append(self._chunk_one_filing(str(fileid)))
 
         if not ref_frames:
-            raise RuntimeError("No filings produced chunks — check files/ and the config.")
+            raise RuntimeError(f"No filings produced chunks — check {self.pdfs_dir}/ and the config.")
 
         # join company metadata (companyid, companyname, filingDate) onto every chunk
         reference_df = pd.concat(ref_frames, ignore_index=True)
@@ -94,7 +94,7 @@ class BatchInputPreparer:
         logger.info("Processing fileid=%s", fileid)
 
         # PDF → page-level text, dropping headers/footers and near-empty pages
-        blocks = self.parser.parse(f"files/{fileid}.pdf")
+        blocks = self.parser.parse(f"{self.pdfs_dir}/{fileid}.pdf")
         agg_df = blocks.groupby("page_ind", as_index=False).agg({"text": " ".join})
         agg_df = self.parser.add_token_length(agg_df)
         agg_df = agg_df[agg_df["token_length"] > self.min_page_tokens].reset_index(drop=True)
@@ -123,9 +123,8 @@ class BatchInputPreparer:
             "model": self.model,
         })
 
-    @staticmethod
-    def _load_mapping(companyids: list[int] = None, fileids: list[int] = None) -> pd.DataFrame:
-        df = pd.read_csv(MAPPING_CSV)
+    def _load_mapping(self, companyids: list[int] = None, fileids: list[int] = None) -> pd.DataFrame:
+        df = pd.read_csv(self.mapping_csv)
         if companyids is not None:
             df = df[df["companyid"].isin(companyids)]
         if fileids is not None:

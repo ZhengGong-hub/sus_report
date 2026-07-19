@@ -36,23 +36,26 @@ DROP_SEARCH_COLS = [
 
 
 class PdfAcquirer:
-    """The company universe is pre-split into intermed/<n>/ folders of 10 companies
-    each (see create_intermed_folders); every folder is searched over rolling
-    ~3-month windows and marked done via finished.txt, so the loop is resumable."""
+    """The company universe is pre-split into <intermed_dir>/<n>/ folders of 10
+    companies each (see create_intermed_folders); every folder is searched over
+    rolling ~3-month windows and marked done via finished.txt, so the loop is
+    resumable."""
 
-    def __init__(self, section: dict):
+    def __init__(self, section: dict, data: dict):
         # all knobs come explicitly from config/run.yaml — a missing key fails loudly
         self.start_date = section["start_date"]
         self.end_date = section["end_date"]
         self.resume_from = section["resume_from"]
-        self.files_dir = section["files_dir"]
+        self.pdfs_dir = data["output"]["pdfs_dir"]
+        self.intermed_dir = data["output"]["intermed_dir"]
         self.headers: dict = {}  # set per batch folder by _refresh_token
 
     def run(self) -> None:
         windows = self._gen_date_windows()
-        os.makedirs(self.files_dir, exist_ok=True)
+        os.makedirs(self.pdfs_dir, exist_ok=True)
 
-        batch_folders = sorted(glob.glob("intermed/*"), key=lambda x: int(x.split("/")[-1]))
+        batch_folders = sorted(glob.glob(f"{self.intermed_dir}/*"),
+                               key=lambda x: int(x.split("/")[-1]))
         batch_folders = batch_folders[self.resume_from:]
 
         for intermed in batch_folders:
@@ -179,7 +182,7 @@ class PdfAcquirer:
 
         for _, row in df.iterrows():
             filing_id = row["filingId"]
-            filename = os.path.join(self.files_dir, f"{filing_id}.pdf")
+            filename = os.path.join(self.pdfs_dir, f"{filing_id}.pdf")
 
             if os.path.exists(filename):
                 logger.info("File %s already exists! Skipping download.", filing_id)
@@ -198,12 +201,12 @@ class PdfAcquirer:
                 logger.info("Failed to download ID %s: %s", filing_id, response.status_code)
 
 
-# ── one-time setup: split the company universe into intermed/<n>/ folders ─────
+# ── one-time setup: split the company universe into <intermed_dir>/<n>/ ───────
 
-def load_company_df() -> pd.DataFrame:
-    """US-listed operating companies from company.csv, one row per companyid."""
+def load_company_df(company_csv: str) -> pd.DataFrame:
+    """US-listed operating companies from the CIQ company export, one row per companyid."""
     company_df = (
-        pd.read_csv("company.csv")
+        pd.read_csv(company_csv)
         .dropna(subset=["simpleindustryid", "tradingitemstatusid"])
         .query("companytypeid in [4, 5] and securitysubtypeid == 1")
     )
@@ -227,11 +230,11 @@ def load_company_df() -> pd.DataFrame:
     return company_df.drop_duplicates(subset=["companyid"])
 
 
-def create_intermed_folders(batch_size: int = 10) -> None:
-    company_df = load_company_df()
+def create_intermed_folders(company_csv: str, intermed_dir: str, batch_size: int = 10) -> None:
+    company_df = load_company_df(company_csv)
     for i in range(0, len(company_df), batch_size):
         batch = company_df.iloc[i:i + batch_size]
-        folder = f"intermed/{i // batch_size}"
+        folder = f"{intermed_dir}/{i // batch_size}"
         os.makedirs(folder, exist_ok=True)
         batch.to_csv(f"{folder}/company_df.csv", index=False)
         with open(f"{folder}/companyids.txt", "w") as f:
@@ -243,11 +246,14 @@ def create_intermed_folders(batch_size: int = 10) -> None:
 
 def main() -> None:
     setup_logging()
-    section = stage_section(load_run_config(), "acquire_pdfs")
+    cfg = load_run_config()
+    section = stage_section(cfg, "acquire_pdfs")
+    data = cfg["data"]
     if section["init_folders"]:
-        create_intermed_folders()  # one-time setup; flip init_folders back to false afterwards
+        # one-time setup; flip init_folders back to false afterwards
+        create_intermed_folders(data["input"]["company_csv"], data["output"]["intermed_dir"])
         return
-    PdfAcquirer(section).run()
+    PdfAcquirer(section, data).run()
 
 
 if __name__ == "__main__":

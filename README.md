@@ -50,13 +50,15 @@ Requires `OPENAI_API_KEY` in `.env` (and S&P CIQ credentials for acquisition).
 
 ## Pipeline
 
-Run from the repo root (scripts use relative data paths: `files/`, `mapping_data/`,
-`to_batch_pilot/`, `output/`).
+Run from the repo root. Shared data locations live in the `data:` section of
+`config/run.yaml`, split into `input:` (external files, e.g. `data/input/company.csv`,
+the raw S&P CIQ company-universe export produced outside this repo) and `output:`
+(everything the pipeline writes, under `data/output/`).
 
 | Step | Command | In → Out |
 |------|---------|----------|
-| 1. Acquire PDFs | `carbontax-acquire` | CIQ API → `files/*.pdf`, `intermed/*/fileids.csv` |
-| 2. Build mapping | `carbontax-mapping` | `intermed/` → `mapping_data/company_esgfiling_mapping.csv` |
+| 1. Acquire PDFs | `carbontax-acquire` | CIQ API → `data/output/sustain_reports_pdfs/*.pdf`, `data/output/intermed/*/fileids.csv` |
+| 2. Build mapping | `carbontax-mapping` | `data/output/intermed/` → `data/output/ciq_filing_mapping/company_esgfiling_mapping.csv` |
 | 3. Chunk | `carbontax-chunk config/pilot.yaml` | PDFs → `to_batch_pilot/pilot_batch_ref.parquet` |
 | 4. Build batch | `carbontax-build` | ref parquet → `to_batch_pilot/pilot_batch_combined.jsonl` |
 | 5. Submit | `carbontax-run` | JSONL → OpenAI batch (24h window) |
