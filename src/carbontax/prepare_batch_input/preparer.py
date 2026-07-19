@@ -52,9 +52,6 @@ class BatchInputPreparer:
                 continue
             ref_frames.append(self._chunk_one_filing(str(fileid)))
 
-        if not ref_frames:
-            raise RuntimeError(f"No filings produced chunks — check {self.pdfs_dir}/ and the config.")
-
         # join company metadata (companyid, companyname, filingDate) onto every chunk
         reference_df = pd.concat(ref_frames, ignore_index=True)
         mapping = self._load_mapping(fileids=reference_df["filingId"].unique().tolist())
