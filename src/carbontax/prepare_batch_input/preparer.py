@@ -33,6 +33,11 @@ class BatchInputPreparer:
         self.model = section["model"]
         self.min_page_tokens = section["min_page_tokens"]
         self.input_price_per_1m_usd = section["input_price_per_1m_usd"]  # for the batch cost estimate
+        # how to pick chunks when a filing exceeds max_chunks_per_file; seed makes random reproducible
+        self.chunk_selection = section["chunk_selection"]
+        self.chunk_sample_seed = section["chunk_sample_seed"]
+        if self.chunk_selection not in ("head", "random"):
+            raise ValueError(f"Invalid chunk_selection: {self.chunk_selection}")
         self.parser = PDFParser()
         self.splitter = RecursiveTextSplitter(
             max_length=section["chunk_max_tokens"],
@@ -145,8 +150,11 @@ class BatchInputPreparer:
 
         max_chunks = self.section["max_chunks_per_file"]  # null in YAML = no cap
         if max_chunks is not None and len(filtered) > max_chunks:
-            filtered = filtered.head(max_chunks)
-            logger.info("Capped to %d chunks for fileid=%s", max_chunks, fileid)
+            if self.chunk_selection == "head":
+                filtered = filtered.head(max_chunks)
+            else:  # "random" — seeded so re-chunking reproduces the same draw
+                filtered = filtered.sample(n=max_chunks, random_state=self.chunk_sample_seed).sort_index()
+            logger.info("Capped to %d chunks (%s) for fileid=%s", max_chunks, self.chunk_selection, fileid)
 
         return pd.DataFrame({
             "filingId": int(fileid),
@@ -219,6 +227,9 @@ class BatchInputPreparer:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         keywords = ", ".join(self.filter.keywords)
         cap = self.section["max_chunks_per_file"]
+        chunk_sel = self.chunk_selection
+        if self.chunk_selection == "random":
+            chunk_sel += f" (seed {self.chunk_sample_seed})"
         skip_section = self._skip_section()
 
         md = f"""# Batch JSONL summary — `{self.run_name}`
@@ -262,6 +273,7 @@ Generated {now} · model `{self.model}` · prompt `{PROMPT_VERSION}`
 ## Run config context
 
 - `max_chunks_per_file`: {cap}
+- `chunk_selection`: {chunk_sel}
 - `filter_keywords`: {keywords}
 
 ---
