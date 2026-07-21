@@ -101,3 +101,5 @@ log/*
 *.db
 *.parquet
 *.xlsx
+
+batch_folder/*
