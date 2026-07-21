@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import yaml
 
-CONFIG_PATH = "config/run.yaml"
-
-
-def load_run_config(path: str = CONFIG_PATH) -> dict:
+def load_run_config(path: str) -> dict:
     with open(path) as f:
         cfg = yaml.safe_load(f)
     # run_name is the key that ties all stages to the same batch_folder/<run>/ folder

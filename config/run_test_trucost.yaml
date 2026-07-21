@@ -1,0 +1,46 @@
+# The one canonical run config — every carbontax command reads this file.
+# Edit here, then run the stage; no command-line arguments anywhere.
+# All parameters are explicit: the code has no hidden defaults, a missing key fails loudly.
+# File locations are derived from run_name: everything lives in batch_folder/<run_name>/.
+
+run_name: test_trucost
+
+# ── Shared data locations — files passed between stages ───────────────────────
+data:
+  input:   # external files made outside this repo
+    company_csv: data/input/company.csv  # raw CIQ company-universe export
+    trucost_csv: data/input/trucost_environment.csv  # companyid universe for identifier: trucost_companyid
+  output:  # produced by the pipeline stages
+    intermed_dir: data/output/intermed   # stage-1 state: batch folders of 10 companies each
+    pdfs_dir: data/output/sustain_reports_pdfs                                 # downloaded PDFs (<filingId>.pdf)
+    mapping_csv: data/output/ciq_filing_mapping/company_esgfiling_mapping.csv  # canonical company↔filing mapping
+
+# ── Stage 1: acquire_pdfs — download PDFs from S&P CIQ ────────────────────────
+acquire_pdfs:
+  start_date: "2015-01-01"
+  end_date: "2025-01-01"
+  resume_from: 0          # skip the first N intermed batch folders
+  init_folders: false     # true = (re)create intermed batch folders from company_csv, then stop
+
+# ── Stage 2: prepare_batch_input — PDFs → chunks → batch JSONL (local only) ───
+prepare_batch_input:
+  identifier: trucost_companyid   # "fileid" or "companyid"; empty/omitted companyid list = all companyids
+  model: gpt-5.4-mini         # stamped into the ref parquet and every batch request
+  max_chunks_per_file: 20     # cap per filing; null = no cap
+  min_page_tokens: 50         # drop pages with fewer tokens before chunking
+  chunk_max_tokens: 500       # splitter window size
+  chunk_overlap_tokens: 100   # splitter overlap between consecutive chunks
+  filter_keywords:            # a chunk must contain at least one (case-insensitive)
+    - carbon
+    - emission
+
+# ── Stage 3: openai_batch — submit → status → download → parse ────────────────
+# No tunable settings: the batch JSONL already carries the model and schema;
+# batch id and file locations are tracked in batch_folder/<run_name>/batch_status.db.
+openai_batch: {}
+
+# ── Stage 4: analysis — parsed CSV → review workbook ──────────────────────────
+# (per-bucket sheets, governance, adoption/coverage/accuracy stats, raw dump)
+# No tunable settings: reads  batch_folder/<run_name>/parsed_v2_combined.csv,
+#                      writes batch_folder/<run_name>/combined_<run_name>_batch.xlsx.
+analysis: {}

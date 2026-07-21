@@ -7,6 +7,7 @@ import logging
 import os
 
 import pandas as pd
+from tqdm import tqdm
 
 from carbontax.paths import batch_jsonl, combined_ref, run_dir
 from carbontax.prepare_batch_input.filter import SemanticFilter
@@ -26,6 +27,7 @@ class BatchInputPreparer:
         # model is stamped into the ref parquet AND into every batch request, so both agree
         self.pdfs_dir = data["output"]["pdfs_dir"]
         self.mapping_csv = data["output"]["mapping_csv"]
+        self.input = data["input"]  # read lazily; only some identifiers need input files
         self.model = section["model"]
         self.min_page_tokens = section["min_page_tokens"]
         self.parser = PDFParser()
@@ -46,7 +48,7 @@ class BatchInputPreparer:
         fileids = self._resolve_fileids()
 
         ref_frames: list[pd.DataFrame] = []
-        for fileid in fileids:
+        for fileid in tqdm(fileids, desc="Chunking filings", unit="pdf"):
             if not os.path.exists(f"{self.pdfs_dir}/{fileid}.pdf"):
                 logger.warning("PDF not found for fileid=%s — skipping", fileid)
                 continue
@@ -71,7 +73,16 @@ class BatchInputPreparer:
         if identifier == "fileid":
             fileids = self.section["fileid"]
         elif identifier == "companyid":
-            fileids = self._load_mapping(companyids=self.section["companyid"])["filingId"].tolist()
+            companyids = self.section.get("companyid")  # empty/omitted = every companyid in the mapping
+            if companyids:
+                fileids = self._load_mapping(companyids=companyids)["filingId"].tolist()
+            else:
+                fileids = self._load_mapping()["filingId"].tolist()
+        elif identifier == "trucost_companyid":
+            # every company in the trucost export; all their filings, all years
+            trucost = pd.read_csv(self.input["trucost_csv"], usecols=["companyid"])
+            companyids = trucost["companyid"].dropna().astype("int64").unique().tolist()
+            fileids = self._load_mapping(companyids=companyids)["filingId"].tolist()
         else:
             raise ValueError(f"Invalid identifier: {identifier}")
 
