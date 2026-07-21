@@ -22,6 +22,14 @@ def combined_ref(run_name: str) -> str:  # chunks + join key  (written by prepar
     return os.path.join(run_dir(run_name), f"{JOB_ID}_ref.parquet")
 
 
+def batch_jsonl_summary(run_name: str) -> str:  # human-readable batch report (written by prepare)
+    return os.path.join(run_dir(run_name), "batch_jsonl_summary.md")
+
+
+def skipped_pdfs_json(run_name: str) -> str:  # fileids skipped (missing/corrupt) during chunking
+    return os.path.join(run_dir(run_name), "skipped_pdfs.json")
+
+
 def output_csv(run_name: str) -> str:  # regulated output    (written by download)
     return os.path.join(run_dir(run_name), f"output_{JOB_ID}.csv")
 

@@ -57,6 +57,7 @@ prepare_batch_input:
     - 639215906
   model: gpt-5.4-mini         # stamped into the ref parquet and every batch request
   max_chunks_per_file: 20     # cap per filing; null = no cap
+  input_price_per_1m_usd: 0.375  # $/1M input tokens (batch-discounted rate); used for the batch cost estimate
   min_page_tokens: 50         # drop pages with fewer tokens before chunking
   chunk_max_tokens: 500       # splitter window size
   chunk_overlap_tokens: 100   # splitter overlap between consecutive chunks

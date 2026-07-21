@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import datetime, timezone
 
 import pandas as pd
+import tiktoken
 from tqdm import tqdm
 
-from carbontax.paths import batch_jsonl, combined_ref, run_dir
+from carbontax.paths import batch_jsonl, batch_jsonl_summary, combined_ref, run_dir, skipped_pdfs_json
 from carbontax.prepare_batch_input.filter import SemanticFilter
 from carbontax.prepare_batch_input.pdf_parser import PDFParser
 from carbontax.prepare_batch_input.splitter import RecursiveTextSplitter
@@ -30,6 +32,7 @@ class BatchInputPreparer:
         self.input = data["input"]  # read lazily; only some identifiers need input files
         self.model = section["model"]
         self.min_page_tokens = section["min_page_tokens"]
+        self.input_price_per_1m_usd = section["input_price_per_1m_usd"]  # for the batch cost estimate
         self.parser = PDFParser()
         self.splitter = RecursiveTextSplitter(
             max_length=section["chunk_max_tokens"],
@@ -48,11 +51,26 @@ class BatchInputPreparer:
         fileids = self._resolve_fileids()
 
         ref_frames: list[pd.DataFrame] = []
+        missing: list[int] = []          # no PDF on disk (expected: not every filing was downloaded)
+        corrupt: list[dict] = []         # PDF present but unreadable — skip so a long run isn't lost
         for fileid in tqdm(fileids, desc="Chunking filings", unit="pdf"):
             if not os.path.exists(f"{self.pdfs_dir}/{fileid}.pdf"):
                 logger.warning("PDF not found for fileid=%s — skipping", fileid)
+                missing.append(int(fileid))
                 continue
-            ref_frames.append(self._chunk_one_filing(str(fileid)))
+            try:
+                ref_frames.append(self._chunk_one_filing(str(fileid)))
+            except Exception as err:  # corrupt/unreadable PDF (e.g. pymupdf.FileDataError)
+                logger.warning("Failed to parse fileid=%s (%s: %s) — skipping",
+                               fileid, type(err).__name__, err)
+                corrupt.append({"fileid": int(fileid), "error": f"{type(err).__name__}: {err}"})
+
+        os.makedirs(run_dir(self.run_name), exist_ok=True)
+        self._write_skipped(len(fileids), missing, corrupt)
+        if not ref_frames:
+            raise ValueError(
+                f"No filings could be chunked: {len(missing)} missing, {len(corrupt)} corrupt "
+                f"out of {len(fileids)} requested — see {skipped_pdfs_json(self.run_name)}")
 
         # join company metadata (companyid, companyname, filingDate) onto every chunk
         reference_df = pd.concat(ref_frames, ignore_index=True)
@@ -62,11 +80,18 @@ class BatchInputPreparer:
             on="filingId", how="left",
         )
 
-        os.makedirs(run_dir(self.run_name), exist_ok=True)
-        parquet_path = combined_ref(self.run_name)
+        parquet_path = combined_ref(self.run_name)  # run folder already created above
         reference_df.to_parquet(parquet_path, index=False)
         logger.info("Wrote %d reference rows → %s", len(reference_df), parquet_path)
         return parquet_path
+
+    def _write_skipped(self, requested: int, missing: list[int], corrupt: list[dict]) -> None:
+        """Persist the missing/corrupt fileids so the summary is correct even if build_jsonl reruns."""
+        payload = {"requested": requested, "missing": missing, "corrupt": corrupt}
+        with open(skipped_pdfs_json(self.run_name), "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2)
+        logger.info("Skipped %d missing + %d corrupt of %d requested filings",
+                    len(missing), len(corrupt), requested)
 
     def _resolve_fileids(self) -> list[int]:
         identifier = self.section["identifier"]
@@ -160,7 +185,127 @@ class BatchInputPreparer:
                 fh.write(json.dumps(request, ensure_ascii=False) + "\n")
 
         logger.info("Wrote %d requests → %s", len(ref_df), out_path)
+        self._write_summary(ref_df, system_prompt)
         return out_path
+
+    def _write_summary(self, ref_df: pd.DataFrame, system_prompt: str) -> str:
+        """Human-readable markdown report on the batch just written (composition, tokens, cost)."""
+        enc = tiktoken.get_encoding("cl100k_base")  # repo-standard tokenizer; model may differ slightly
+        tok = ref_df["chunks"].map(lambda c: len(enc.encode(c)))
+        system_tokens = len(enc.encode(system_prompt))
+
+        n_chunks = len(ref_df)
+        n_companies = int(ref_df["companyid"].dropna().nunique())
+        n_filings = int(ref_df["filingId"].nunique())
+
+        total_chunk_tokens = int(tok.sum())
+        total_input_tokens = total_chunk_tokens + system_tokens * n_chunks
+        avg_chunk_tokens = total_chunk_tokens / n_chunks
+        system_share = system_tokens * n_chunks / total_input_tokens * 100
+        max_request_tokens = system_tokens + int(tok.max())
+
+        est_cost = total_input_tokens / 1e6 * self.input_price_per_1m_usd
+        cost_per_company = est_cost / n_companies if n_companies else 0.0
+        cost_per_filing = est_cost / n_filings if n_filings else 0.0
+
+        # spreads: mean · median · min · max, formatted in one cell each
+        chunks_per_filing = ref_df.groupby("filingId").size()
+        chunks_per_company = ref_df.groupby("companyid").size()
+        filings_per_company = ref_df.groupby("companyid")["filingId"].nunique()
+
+        def spread(s: pd.Series) -> str:
+            return f"{s.mean():.1f} · {s.median():.0f} · {s.min()} · {s.max()}"
+
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        keywords = ", ".join(self.filter.keywords)
+        cap = self.section["max_chunks_per_file"]
+        skip_section = self._skip_section()
+
+        md = f"""# Batch JSONL summary — `{self.run_name}`
+
+Generated {now} · model `{self.model}` · prompt `{PROMPT_VERSION}`
+
+## Composition & cost
+
+| Metric | Value |
+|---|---|
+| Companies | {n_companies:,} |
+| Filings | {n_filings:,} |
+| Chunks (= requests = JSONL lines) | {n_chunks:,} |
+| Total input tokens | {total_input_tokens:,} |
+| Avg chunk token length | {avg_chunk_tokens:,.1f} |
+| Input price | ${self.input_price_per_1m_usd:.3f} / 1M tokens |
+| **Estimated input cost** | **${est_cost:,.2f}** |
+| Cost per company | ${cost_per_company:.4f} |
+| Cost per filing | ${cost_per_filing:.4f} |
+
+## Token detail
+
+| Metric | Value |
+|---|---|
+| System-prompt tokens (per request) | {system_tokens:,} |
+| System-prompt share of input | {system_share:.1f}% |
+| Total chunk tokens | {total_chunk_tokens:,} |
+| Chunk tokens — median · min · max | {tok.median():.0f} · {tok.min()} · {tok.max()} |
+| Chunk tokens — p90 · p95 | {tok.quantile(0.90):.0f} · {tok.quantile(0.95):.0f} |
+| Max single-request tokens (system + largest chunk) | {max_request_tokens:,} |
+
+## Spread (mean · median · min · max)
+
+| Metric | mean · median · min · max |
+|---|---|
+| Chunks per filing | {spread(chunks_per_filing)} |
+| Chunks per company | {spread(chunks_per_company)} |
+| Filings per company | {spread(filings_per_company)} |
+
+{skip_section}
+## Run config context
+
+- `max_chunks_per_file`: {cap}
+- `filter_keywords`: {keywords}
+
+---
+*Estimates. Tokens counted with `cl100k_base`; the real model may tokenize differently. Input tokens
+cover the system prompt (×{n_chunks:,} requests) plus chunk text, and exclude the response JSON schema
+and per-message envelope overhead, so true billed input is modestly higher. Cost is inputs only, at
+the configured (already batch-discounted) rate.*
+"""
+        out_path = batch_jsonl_summary(self.run_name)
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write(md)
+        logger.info("Wrote batch summary → %s", out_path)
+        return out_path
+
+    def _skip_section(self) -> str:
+        """Markdown block on PDFs skipped during chunking, read from the persisted sidecar."""
+        path = skipped_pdfs_json(self.run_name)
+        if not os.path.exists(path):
+            return "## Skipped PDFs\n\n_No skip record found (chunking not run this session)._\n"
+        with open(path, encoding="utf-8") as fh:
+            skip = json.load(fh)
+        requested, missing, corrupt = skip["requested"], skip["missing"], skip["corrupt"]
+        readable = requested - len(missing) - len(corrupt)
+
+        lines = [
+            "## Skipped PDFs",
+            "",
+            "| Category | Count |",
+            "|---|---|",
+            f"| Requested filings | {requested:,} |",
+            f"| With readable PDF | {readable:,} |",
+            f"| Missing — no PDF downloaded | {len(missing):,} |",
+            f"| Corrupt — present but unreadable | {len(corrupt):,} |",
+            "",
+        ]
+        if corrupt:
+            preview = 50  # keep the .md readable; full list lives in skipped_pdfs.json
+            lines.append("Corrupt fileids jumped during chunking:")
+            lines.append("")
+            lines += [f"- `{c['fileid']}` — {c['error']}" for c in corrupt[:preview]]
+            if len(corrupt) > preview:
+                lines.append(f"- … +{len(corrupt) - preview:,} more (full list in `skipped_pdfs.json`)")
+            lines.append("")
+        return "\n".join(lines)
 
     def _build_request(self, chunk_id: str, chunk_text: str, schema: dict, system_prompt: str) -> dict:
         return {
