@@ -59,8 +59,8 @@ the raw S&P CIQ company-universe export produced outside this repo) and `output:
 |------|---------|----------|
 | 1. Acquire PDFs | `carbontax-acquire` | CIQ API → `data/output/sustain_reports_pdfs/*.pdf`, `data/output/intermed/*/fileids.csv` |
 | 2. Build mapping | `carbontax-mapping` | `data/output/intermed/` → `data/output/ciq_filing_mapping/company_esgfiling_mapping.csv` |
-| 3. Chunk | `carbontax-chunk config/pilot.yaml` | PDFs → `to_batch_pilot/pilot_batch_ref.parquet` |
-| 4. Build batch | `carbontax-build` | ref parquet → `to_batch_pilot/pilot_batch_combined.jsonl` |
+| 3. Chunk | `carbontax-chunk config/pilot.yaml` | PDFs → `to_batch_pilot/batch_ref.parquet` |
+| 4. Build batch | `carbontax-build` | ref parquet → `to_batch_pilot/batch.jsonl` |
 | 5. Submit | `carbontax-run` | JSONL → OpenAI batch (24h window) |
 | 6. Parse | `carbontax-parse` | batch output → `output/parsed_v2_combined.csv` |
 | 7. Compare | `carbontax-compare` | v1 vs v2 → `output/compare_v1_v2.csv` |

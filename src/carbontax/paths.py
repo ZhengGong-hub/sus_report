@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 
 BATCH_ROOT = "batch_folder"
-# historical filename stem, kept so existing run folders (batch_folder/pilot/) stay readable
+FILE_STEM = "batch"  # stem for this run's batch files (batch.jsonl, batch_ref.parquet, output_batch.csv)
+# BatchManager tracking key inside each run's batch_status.db — keep stable, or an
+# already-submitted batch loses its record. Distinct from FILE_STEM (filenames) on purpose.
 JOB_ID = "pilot_batch_combined"
-DEFAULT_RUN_NAME = "pilot"
 
 
 def run_dir(run_name: str) -> str:
@@ -15,11 +16,11 @@ def run_dir(run_name: str) -> str:
 
 
 def batch_jsonl(run_name: str) -> str:  # batch input        (written by prepare)
-    return os.path.join(run_dir(run_name), f"{JOB_ID}.jsonl")
+    return os.path.join(run_dir(run_name), f"{FILE_STEM}.jsonl")
 
 
 def combined_ref(run_name: str) -> str:  # chunks + join key  (written by prepare)
-    return os.path.join(run_dir(run_name), f"{JOB_ID}_ref.parquet")
+    return os.path.join(run_dir(run_name), f"{FILE_STEM}_ref.parquet")
 
 
 def batch_jsonl_summary(run_name: str) -> str:  # human-readable batch report (written by prepare)
@@ -31,7 +32,7 @@ def skipped_pdfs_json(run_name: str) -> str:  # fileids skipped (missing/corrupt
 
 
 def output_csv(run_name: str) -> str:  # regulated output    (written by download)
-    return os.path.join(run_dir(run_name), f"output_{JOB_ID}.csv")
+    return os.path.join(run_dir(run_name), f"output_{FILE_STEM}.csv")
 
 
 def parsed_csv(run_name: str) -> str:  # analysis-ready      (written by parse)
