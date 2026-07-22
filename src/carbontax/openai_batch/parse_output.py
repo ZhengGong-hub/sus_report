@@ -36,36 +36,19 @@ def _parse_dict_cell(v: object) -> dict:
     return ast.literal_eval(str(v))
 
 
-def _parse_evidence(v: object) -> dict[str, dict]:
-    # evidence array → {measure_id: {quote, page}}
-    if pd.isna(v) or v == "":
-        return {}
-    arr = v if isinstance(v, list) else ast.literal_eval(str(v))
-    result: dict[str, dict] = {}
-    for item in arr:
-        if isinstance(item, dict) and "measure" in item:
-            result[item["measure"]] = {"quote": item.get("quote"), "page": item.get("page")}
-    return result
-
-
 def flatten_row(row: pd.Series) -> dict:
-    """One output row → flat columns: tier1_*, tier2_*(+_quote/_page), governance_*(+_quote/_page)."""
+    """One output row → flat boolean columns: tier1_*, tier2_*, governance_*."""
     t1  = _parse_dict_cell(row.get("tier1",      {}))
     t2  = _parse_dict_cell(row.get("tier2",      {}))
     gov = _parse_dict_cell(row.get("governance", {}))
-    ev  = _parse_evidence(row.get("evidence",    []))
 
     flat: dict = {}
     for bucket in TIER1_BUCKETS:
         flat[f"tier1_{bucket}"] = t1.get(bucket)
     for mid in MEASURE_IDS:
         flat[f"tier2_{mid}"] = t2.get(mid)
-        flat[f"tier2_{mid}_quote"] = ev.get(mid, {}).get("quote")
-        flat[f"tier2_{mid}_page"]  = ev.get(mid, {}).get("page")
     for flag in GOVERNANCE_FLAGS:
         flat[f"governance_{flag}"] = gov.get(flag)
-        flat[f"governance_{flag}_quote"] = ev.get(flag, {}).get("quote")
-        flat[f"governance_{flag}_page"]  = ev.get(flag, {}).get("page")
     return flat
 
 
@@ -88,11 +71,6 @@ def parse_output(run_name: str) -> pd.DataFrame:
     result = ref_df.merge(pd.concat([meta_df, flat_df], axis=1), on="chunk_ids", how="left")
 
     result = result.apply(lambda col: col.map(_clean) if col.dtype == object else col)
-
-    # keep page numbers as nullable Int64 so missing pages stay blank
-    # instead of rendering as "11.0" via float NaN promotion
-    for c in [c for c in result.columns if c.endswith("_page")]:
-        result[c] = pd.to_numeric(result[c], errors="coerce").astype("Int64")
 
     dest_path = parsed_csv(run_name)
     os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)

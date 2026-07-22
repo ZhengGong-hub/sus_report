@@ -5,7 +5,6 @@ from __future__ import annotations
 import pandas as pd
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.properties import Outline
 
 from carbontax.config import load_run_config
 from carbontax.paths import parsed_csv, report_xlsx
@@ -101,17 +100,10 @@ class ExcelReporter:
         df = self.df
         id_cols = ["companyname", "filingDate", "chunk_ids"]
 
-        # tier1: bare boolean flag per bucket (no quote/page in the combined schema)
+        # all outputs are bare boolean flags (the schema has no evidence quote/page)
         tier1_cols = [f"tier1_{b}" for b in TIER1]
-        # tier2: flag + quote + page per measure, grouped by tier-1 bucket
-        tier2_cols = {
-            b: [c for m in subs for c in (f"tier2_{m}", f"tier2_{m}_quote", f"tier2_{m}_page")]
-            for b, subs in TIER2.items()
-        }
-        gov_cols = [
-            c for f in GOVERNANCE
-            for c in (f"governance_{f}", f"governance_{f}_quote", f"governance_{f}_page")
-        ]
+        tier2_cols = {b: [f"tier2_{m}" for m in subs] for b, subs in TIER2.items()}
+        gov_cols = [f"governance_{f}" for f in GOVERNANCE]
 
         with pd.ExcelWriter(path, engine="openpyxl") as writer:
             # ── chunk-level data sheets ──
@@ -140,15 +132,10 @@ class ExcelReporter:
                    [c for c in strategy_cols if c in df.columns]
         sub = df[all_cols].copy()
 
-        # adopted = the bare flag columns (not the _quote / _page evidence columns)
-        adopted_set = {
-            c for c in strategy_cols
-            if c in sub.columns and not c.endswith(("_quote", "_page"))
-        }
+        # every strategy column is a bare adoption flag now (no evidence columns)
+        adopted_set = {c for c in strategy_cols if c in sub.columns}
         for col in adopted_set:
             sub[col] = sub[col].apply(_adopted_display)
-
-        wrap = Alignment(wrap_text=True, vertical="top")
 
         for ci, col in enumerate(all_cols, 1):
             cell = ws.cell(1, ci, col)
@@ -164,29 +151,14 @@ class ExcelReporter:
                 if col in adopted_set:
                     cell.fill      = _YES_FILL if val == "Yes" else (_NO_FILL if val == "No" else PatternFill())
                     cell.alignment = _CENTER
-                elif col.endswith("_page"):
-                    cell.alignment = _CENTER
-                elif col.endswith("_quote") or col == "chunks":
-                    cell.alignment = wrap
 
         n_id = len([c for c in id_cols if c in df.columns])
         for ci, col in enumerate(all_cols, 1):
             letter = get_column_letter(ci)
             if col in adopted_set:
                 ws.column_dimensions[letter].width = 8
-            elif col.endswith("_page"):
-                ws.column_dimensions[letter].width = 7
-            elif col.endswith("_quote") or col == "chunks":
-                ws.column_dimensions[letter].width = 40
             else:
                 ws.column_dimensions[letter].width = max(len(col) + 2, 14)
-
-        # group quote/page evidence columns so they collapse with the +/- button
-        for ci, col in enumerate(all_cols, 1):
-            if col.endswith(("_quote", "_page")) or col == "chunks":
-                ws.column_dimensions[get_column_letter(ci)].outlineLevel = 1
-        # place the collapse button to the left of the group (more intuitive)
-        ws.sheet_properties.outlinePr = Outline(summaryRight=False)
 
         ws.freeze_panes    = ws.cell(2, n_id + 1)
         ws.row_dimensions[1].height = 20

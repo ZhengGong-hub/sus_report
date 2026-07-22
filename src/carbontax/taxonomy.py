@@ -8,7 +8,7 @@ list elsewhere — drift between prompt and schema is the primary failure mode.
 
 from __future__ import annotations
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v2.2"  # v2.2: action-vs-mention rule at Tier-2; governance trigger + glosses; Tier-1 rollup rule; evidence array removed (flags only); dropped stale CFE reference; taxonomy unchanged from v2
 
 # ── Tier-1 scope buckets ──────────────────────────────────────────────────────
 
@@ -25,14 +25,11 @@ TIER1_BUCKETS: dict[str, str] = {
     ),
     "S3U": (
         "Scope 3 upstream — indirect emissions in the supply chain upstream of the firm "
-        "(GHG Protocol Categories 1–8: purchased goods & services, capital goods, "
-        "fuel/energy not sold, upstream transport, waste, business travel, commuting, "
-        "upstream leased assets)."
+        "(GHG Protocol Categories 1–8; itemised as c1–c8 below)."
     ),
     "S3D": (
         "Scope 3 downstream — indirect emissions from the use and end-of-life of products "
-        "sold by the firm (Categories 9–15: downstream transport, processing, use-phase, "
-        "end-of-life, downstream leased assets, franchises, investments)."
+        "sold by the firm (Categories 9–15; itemised as c9–c15 below)."
     ),
     "CDR": (
         "Carbon removal and offsets — nature-based solutions, engineered carbon dioxide "
@@ -103,19 +100,38 @@ GOVERNANCE_FLAGS: list[str] = [
 # Most names are self-documenting — over-glossing wastes tokens and flattens signal.
 
 GLOSS: dict[str, str] = {
+    "ppa":                           "renewable electricity via a named power purchase agreement",
+    "rec_goo":                       "renewable electricity via a named REC or Guarantee of Origin certificate",
     "c1_supplier_engagement":        "engaging, auditing, or requiring suppliers to reduce emissions",
-    "c1_material_substitution":      "switching to lower-carbon input materials or ingredients",
-    "renewable_electricity_general": "renewable electricity purchased with no named instrument (not a PPA, REC/GO, or 24/7 CFE contract)",
+    "c1_material_substitution":      "switching to lower-carbon input materials or ingredients (independent of c1_supplier_engagement — both may be true)",
+    "renewable_electricity_general": "renewable electricity purchased with no named instrument (not a PPA or REC/GO)",
     "onsite_renewables":             "firm-OWNED on-site generation (rooftop solar, wind, CHP) — Scope 1, not Scope 2",
     "c3_fuel_energy":                "upstream extraction, production, and transport of fuels/energy purchased by the firm but not resold",
     "c10_processing":                "downstream processor's emissions from further processing of the firm's sold intermediate products",
+    "c12_eol":                       "end-of-life treatment of the firm's sold products (disposal, recycling, incineration)",
     "c13_downstream_leased":         "emissions from assets leased OUT by the firm to lessees",
     "packaging":                     "reducing packaging weight or switching to lower-carbon packaging materials",
+    "nbs":                           "nature-based carbon removal (afforestation, reforestation, soil carbon)",
+    "tech_cdr":                      "engineered carbon removal (direct air capture, BECCS, biochar)",
 }
 
 # Guard: every GLOSS key must be a valid measure id
 assert all(k in MEASURE_IDS for k in GLOSS), (
     f"GLOSS keys not in MEASURE_IDS: {set(GLOSS) - set(MEASURE_IDS)}"
+)
+
+# Governance flags need their own framing (existence of the mechanism, not a reduction
+# action), so they get a small dedicated gloss table rather than sharing GLOSS.
+GOVERNANCE_GLOSS: dict[str, str] = {
+    "sbti":                  "an SBTi-validated or -committed emissions target",
+    "internal_carbon_price": "applies an internal carbon price or shadow cost",
+    "exec_comp_linked":      "executive pay tied to climate/emissions targets",
+    "third_party_assurance": "emissions data externally assured or verified",
+}
+
+# Guard: every GOVERNANCE_GLOSS key must be a valid governance flag
+assert all(k in GOVERNANCE_FLAGS for k in GOVERNANCE_GLOSS), (
+    f"GOVERNANCE_GLOSS keys not in GOVERNANCE_FLAGS: {set(GOVERNANCE_GLOSS) - set(GOVERNANCE_FLAGS)}"
 )
 
 
@@ -125,32 +141,14 @@ def _bool_prop() -> dict:
     return {"type": "boolean"}
 
 
-def _evidence_array_schema() -> dict:
-    """Evidence array: one entry per true measure, populated by the model."""
-    return {
-        "type": "array",
-        "items": {
-            "type": "object",
-            "properties": {
-                "measure": {"type": "string"},
-                "quote":   {"type": "string"},
-                "page":    {"type": ["integer", "null"]},
-            },
-            "required": ["measure", "quote", "page"],
-            "additionalProperties": False,
-        },
-    }
-
-
 def build_combined_schema() -> dict:
     """
-    Combined v2 schema: flat booleans for all measures + governance flags,
-    plus a single evidence array for true measures only.
+    Combined v2 schema: flat booleans for all measures + governance flags.
 
     Property count across all objects:
-      root(4) + tier1(5) + tier2(30) + governance(4) + evidence.items(3) = 46
+      root(3) + tier1(5) + tier2(30) + governance(4) = 42
     Well under OpenAI's 100-property hard limit.
-    Nesting depth ≤ 4 (under the 5-level limit).
+    Nesting depth ≤ 3 (under the 5-level limit).
     """
     tier1_props    = {bucket: _bool_prop() for bucket in TIER1_BUCKETS}
     tier2_props    = {mid: _bool_prop() for mid in MEASURE_IDS}
@@ -179,9 +177,8 @@ def build_combined_schema() -> dict:
                     "required": list(gov_props),
                     "additionalProperties": False,
                 },
-                "evidence": _evidence_array_schema(),
             },
-            "required": ["tier1", "tier2", "governance", "evidence"],
+            "required": ["tier1", "tier2", "governance"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -200,7 +197,7 @@ def _measures_by_scope() -> dict[str, list[str]]:
 def build_combined_system_prompt() -> str:
     """
     Single combined extraction prompt (v2).
-    Scope-ordered, selective glosses, one disambiguation block, rules once.
+    Scope-ordered, selective glosses carry the disambiguation, rules stated once.
     Target: < 900 words so chunk text gets full model attention.
     """
     by_scope = _measures_by_scope()
@@ -209,7 +206,8 @@ def build_combined_system_prompt() -> str:
         "You are extracting corporate carbon-reduction measures from sustainability report text.",
         "",
         "## Tier-1 scope buckets",
-        "For each bucket, mark true if the chunk describes ANY emission-reduction action in that scope.",
+        "Set a bucket true if any of its Tier-2 measures below is true, or if the chunk "
+        "describes a scope-level emission-reduction action not itemised as a measure.",
         "",
     ]
     for bucket, defn in TIER1_BUCKETS.items():
@@ -218,7 +216,8 @@ def build_combined_system_prompt() -> str:
     lines += [
         "",
         "## Tier-2 measures (by scope)",
-        "Mark each true only for concrete, reporting-year actions (not aspirations).",
+        "Mark a measure true only when the chunk describes an action that reduces this "
+        "source — not a mere mention that the source exists.",
         "",
     ]
     for scope, mids in by_scope.items():
@@ -235,35 +234,20 @@ def build_combined_system_prompt() -> str:
 
     lines += [
         "## Governance flags",
+        "Mark true if the chunk shows the firm has this mechanism in place. Unlike Tier-2 "
+        "measures, a stated commitment or target counts (e.g. an SBTi target = true) — the "
+        "aspiration rule below applies to measures, not to governance.",
+        "",
     ]
     for flag in GOVERNANCE_FLAGS:
-        lines.append(f"  {flag}")
+        gloss = GOVERNANCE_GLOSS.get(flag)
+        lines.append(f"  {flag}: {gloss}" if gloss else f"  {flag}")
 
     lines += [
         "",
-        "## Disambiguation",
-        "",
-        "**S2 renewable electricity — four distinct fields:**",
-        "  onsite_renewables: firm-OWNED on-site solar/wind/CHP → Scope 1, never S2.",
-        "  ppa: named power purchase agreement.",
-        "  rec_goo: named REC or Guarantee of Origin certificate.",
-        "  renewable_electricity_general: renewable PURCHASED electricity, no named instrument.",
-        "  A utility SELLING renewable power = its S3D product, not its own S2.",
-        "",
-        "**c1 split — both can be true simultaneously:**",
-        "  c1_supplier_engagement: acting on or with suppliers (audits, requirements, programs).",
-        "  c1_material_substitution: changing WHAT is purchased (input material or ingredient).",
-        "",
-        "**packaging** — mark true if the firm reduces packaging weight or switches to",
-        "  lower-carbon packaging; scope is provisional S3U.",
-        "",
         "## Decision rules",
-        "- true only for concrete actions in the reporting year.",
-        "  Pure aspiration ('committed to...', 'target to...') = false.",
-        "- evidence[]: one entry per measure you mark true.",
-        "  measure: exact field id (e.g. energy_efficiency).",
-        "  quote: verbatim text, ≤15 words.",
-        "  page: integer from the nearest [PAGE N] marker; null if absent.",
+        "- Tier-1 buckets & Tier-2 measures: true only for a concrete action in the reporting year.",
+        "  Pure aspiration ('committed to...', 'target to...') = false. (Governance flags: see above.)",
         "- If unsure → false. Do not infer beyond the text.",
     ]
 
