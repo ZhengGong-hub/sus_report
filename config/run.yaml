@@ -56,6 +56,7 @@ prepare_batch_input:
     - 276763615
     - 639215906
   model: gpt-5.4-mini         # stamped into the ref parquet and every batch request
+  temperature: 0              # request temperature; null = omit (some gpt-5 models reject non-default values)
   max_chunks_per_file: 20     # cap per filing; null = no cap
   chunk_selection: random     # head | random — how to pick when a filing exceeds max_chunks_per_file
   chunk_sample_seed: 42       # RNG seed for chunk_selection: random (reproducible draw)
@@ -67,6 +68,7 @@ prepare_batch_input:
   # so prepare writes an indexed batch_files/ folder, rolling shards at whichever cap hits first
   max_requests_per_shard: 45000    # headroom under the 50k-request cap
   max_bytes_per_shard: 188743680   # 180 MiB, headroom under the ~200MB file cap
+  max_tokens_per_shard: 15000000   # headroom under OpenAI's 20M enqueued-token cap (usually the binding one)
   filter_keywords:            # a chunk must contain at least one (case-insensitive)
     - carbon
     - emission

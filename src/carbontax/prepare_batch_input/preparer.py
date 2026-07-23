@@ -39,6 +39,8 @@ class BatchInputPreparer:
         self.mapping_csv = data["output"]["mapping_csv"]
         self.input = data["input"]  # read lazily; only some identifiers need input files
         self.model = section["model"]
+        # request temperature; null in config = omit it (gpt-5 reasoning models reject any non-default value)
+        self.temperature = section["temperature"]
         self.min_page_tokens = section["min_page_tokens"]
         self.input_price_per_1m_usd = section["input_price_per_1m_usd"]  # for the batch cost estimate
         # how to pick chunks when a filing exceeds max_chunks_per_file; seed makes random reproducible
@@ -185,8 +187,9 @@ class BatchInputPreparer:
     def build_jsonl(self) -> str:
         """One combined-schema request per chunk, sharded under OpenAI's per-batch limits.
 
-        OpenAI caps a batch at 50k requests AND ~200MB per input file, so we roll to a
-        fresh indexed shard whenever the next request would breach either configured cap.
+        OpenAI caps a batch at 50k requests, ~200MB per input file, AND an enqueued-token
+        budget per model — so we roll to a fresh indexed shard whenever the next request
+        would breach any configured cap. The token cap is usually the one that binds.
         """
         ref_path = combined_ref(self.run_name)
         if not os.path.exists(ref_path):
@@ -198,8 +201,17 @@ class BatchInputPreparer:
         schema = build_combined_schema()
         system_prompt = build_combined_system_prompt()
 
+        # per-request input tokens = system prompt (fixed) + chunk; counted once here and
+        # reused by _write_summary. tiktoken/cl100k_base is an estimate — the token cap
+        # keeps headroom under OpenAI's real enqueued-token limit to absorb the difference.
+        enc = tiktoken.get_encoding("cl100k_base")
+        system_tokens = len(enc.encode(system_prompt))
+        chunk_tokens = ref_df["chunks"].map(lambda c: len(enc.encode(c)))
+        req_tokens = (chunk_tokens + system_tokens).tolist()  # positional, aligned with ref_df
+
         max_rows = self.section["max_requests_per_shard"]
         max_bytes = self.section["max_bytes_per_shard"]
+        max_tokens = self.section["max_tokens_per_shard"]
 
         shards_dir = batch_files_dir(self.run_name)
         # start clean so a re-run never leaves stale shards alongside the new ones
@@ -207,36 +219,41 @@ class BatchInputPreparer:
             shutil.rmtree(shards_dir)
         os.makedirs(shards_dir, exist_ok=True)
 
-        shard_stats: list[dict] = []  # rows + bytes per shard, for the summary report
-        idx, rows, nbytes = 0, 0, 0
+        shard_stats: list[dict] = []  # rows + bytes + tokens per shard, for the summary report
+        idx, rows, nbytes, ntok = 0, 0, 0, 0
         fh = open(batch_shard_jsonl(self.run_name, idx), "w", encoding="utf-8")
-        for _, row in ref_df.iterrows():
+        for pos, (_, row) in enumerate(ref_df.iterrows()):
             request = self._build_request(row["chunk_ids"], row["chunks"], schema, system_prompt)
             line = json.dumps(request, ensure_ascii=False) + "\n"
             line_bytes = len(line.encode("utf-8"))
-            # roll before writing when this line would breach a cap; never split a request,
+            rtok = req_tokens[pos]
+            # roll before writing when this line would breach any cap; never split a request,
             # and rows > 0 guarantees a fresh shard always gets at least one request
-            if rows > 0 and (rows + 1 > max_rows or nbytes + line_bytes > max_bytes):
+            if rows > 0 and (rows + 1 > max_rows or nbytes + line_bytes > max_bytes or ntok + rtok > max_tokens):
                 fh.close()
-                shard_stats.append({"rows": rows, "bytes": nbytes})
+                shard_stats.append({"rows": rows, "bytes": nbytes, "tokens": ntok})
                 idx += 1
                 fh = open(batch_shard_jsonl(self.run_name, idx), "w", encoding="utf-8")
-                rows, nbytes = 0, 0
+                rows, nbytes, ntok = 0, 0, 0
             fh.write(line)
             rows += 1
             nbytes += line_bytes
+            ntok += rtok
         fh.close()
-        shard_stats.append({"rows": rows, "bytes": nbytes})
+        shard_stats.append({"rows": rows, "bytes": nbytes, "tokens": ntok})
 
         logger.info("Wrote %d requests across %d shards → %s", len(ref_df), len(shard_stats), shards_dir)
-        self._write_summary(ref_df, system_prompt, shard_stats)
+        self._write_summary(ref_df, chunk_tokens, system_tokens, shard_stats)
         return shards_dir
 
-    def _write_summary(self, ref_df: pd.DataFrame, system_prompt: str, shard_stats: list[dict]) -> str:
-        """Human-readable markdown report on the batch just written (composition, tokens, cost)."""
-        enc = tiktoken.get_encoding("cl100k_base")  # repo-standard tokenizer; model may differ slightly
-        tok = ref_df["chunks"].map(lambda c: len(enc.encode(c)))
-        system_tokens = len(enc.encode(system_prompt))
+    def _write_summary(self, ref_df: pd.DataFrame, chunk_tokens: pd.Series,
+                       system_tokens: int, shard_stats: list[dict]) -> str:
+        """Human-readable markdown report on the batch just written (composition, tokens, cost).
+
+        chunk_tokens / system_tokens are counted once in build_jsonl and passed in, so the
+        report and the shard token accounting use exactly the same numbers.
+        """
+        tok = chunk_tokens  # per-chunk token counts (cl100k_base; the model may differ slightly)
 
         n_chunks = len(ref_df)
         n_companies = int(ref_df["companyid"].dropna().nunique())
@@ -264,8 +281,10 @@ class BatchInputPreparer:
         n_shards = len(shard_stats)
         shard_rows = [s["rows"] for s in shard_stats]
         shard_mib = [s["bytes"] / 1024 / 1024 for s in shard_stats]
+        shard_mtok = [s["tokens"] / 1e6 for s in shard_stats]
         cap_rows = self.section["max_requests_per_shard"]
         cap_mib = self.section["max_bytes_per_shard"] / 1024 / 1024
+        cap_mtok = self.section["max_tokens_per_shard"] / 1e6
 
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         keywords = ", ".join(self.filter.keywords)
@@ -319,7 +338,8 @@ Generated {now} · model `{self.model}` · prompt `{PROMPT_VERSION}`
 | Shards written | {n_shards} |
 | Requests per shard — min · max | {min(shard_rows):,} · {max(shard_rows):,} |
 | Shard size MiB — min · max | {min(shard_mib):.1f} · {max(shard_mib):.1f} |
-| Caps (requests / MiB per shard) | {cap_rows:,} / {cap_mib:.0f} |
+| Shard input tokens (M) — min · max | {min(shard_mtok):.1f} · {max(shard_mtok):.1f} |
+| Caps (requests / MiB / M-tokens per shard) | {cap_rows:,} / {cap_mib:.0f} / {cap_mtok:.0f} |
 
 {skip_section}
 ## Run config context
@@ -372,20 +392,23 @@ the configured (already batch-discounted) rate.*
         return "\n".join(lines)
 
     def _build_request(self, chunk_id: str, chunk_text: str, schema: dict, system_prompt: str) -> dict:
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": chunk_text},
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": schema,
+            },
+        }
+        # some models (e.g. gpt-5-mini) reject any non-default temperature — null in config omits it
+        if self.temperature is not None:
+            body["temperature"] = self.temperature
         return {
             "custom_id": chunk_id,
             "method": "POST",
             "url": "/v1/chat/completions",
-            "body": {
-                "model": self.model,
-                "temperature": 0,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user",   "content": chunk_text},
-                ],
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": schema,
-                },
-            },
+            "body": body,
         }

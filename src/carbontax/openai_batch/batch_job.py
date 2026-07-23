@@ -42,12 +42,20 @@ class OpenAIBatchJob:
         )
 
     def submit(self, wait_s: int) -> None:
-        """Upload + create one batch per shard, sequentially, pausing wait_s between shards."""
+        """Upload + create one batch per shard, sequentially.
+
+        The enqueued-token limit is a *concurrent* budget across all in-progress batches, so
+        OpenAI rejects a shard once the in-flight total would exceed it. That raises and aborts
+        here (fail-fast); because already-submitted shards carry their batch id in batch_status.db,
+        re-running once some batches complete resumes at the first unsubmitted shard. We only pause
+        wait_s after a shard we actually created, so resumes skip past finished shards instantly.
+        """
         for pos, (i, path, job_id) in enumerate(self.shards):
-            print(f"Submitting shard {i} ({job_id}) ← {path}")
-            # upload_file / create_batch short-circuit if this shard already has ids in the db,
-            # so a re-run resumes from wherever the previous submit stopped
             with self._manager(path, job_id) as m:
+                if m.openai_batch_id:  # submitted in an earlier run — skip, no wait
+                    print(f"Shard {i} ({job_id}) already submitted ({m.openai_batch_id})")
+                    continue
+                print(f"Submitting shard {i} ({job_id}) ← {path}")
                 m.upload_file()
                 m.create_batch()
             if pos < len(self.shards) - 1:
