@@ -10,6 +10,7 @@ import re
 import pandas as pd
 
 from carbontax.config import load_run_config
+from carbontax.openai_batch import CONFIG_PATH
 from carbontax.paths import combined_ref, output_csv, parsed_csv
 from carbontax.taxonomy import MEASURE_IDS, GOVERNANCE_FLAGS, TIER1_BUCKETS
 from carbontax.utils.logger import setup_logging
@@ -81,7 +82,7 @@ def parse_output(run_name: str) -> pd.DataFrame:
 
 def main() -> None:
     setup_logging()
-    parse_output(load_run_config()["run_name"])
+    parse_output(load_run_config(CONFIG_PATH)["run_name"])
 
 
 if __name__ == "__main__":

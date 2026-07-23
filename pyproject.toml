@@ -37,7 +37,7 @@ carbontax-submit   = "carbontax.openai_batch.submit_batch:main"
 carbontax-status   = "carbontax.openai_batch.check_status:main"
 carbontax-download = "carbontax.openai_batch.download_batch:main"
 carbontax-parse    = "carbontax.openai_batch.parse_output:main"
-carbontax-report   = "carbontax.analysis.build_report:main"
+carbontax-report   = "carbontax.analysis.report:main"
 
 [tool.black]
 line-length = 88

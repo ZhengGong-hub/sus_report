@@ -1,10 +1,9 @@
-"""Upload + submit the batch to OpenAI. Configure in config/run.yaml, then just run this."""
+"""Upload + submit the batch to OpenAI. Reads the run named in openai_batch.CONFIG_PATH."""
 
 from carbontax.config import load_run_config
+from carbontax.openai_batch import CONFIG_PATH
 from carbontax.openai_batch.batch_job import OpenAIBatchJob
 from carbontax.utils.logger import setup_logging
-
-CONFIG_PATH = "config/run_test_trucost.yaml"
 
 
 def main() -> None:

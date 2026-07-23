@@ -1,4 +1,4 @@
-"""Parsed CSV → styled review workbook (per-bucket sheets, governance, stats, raw dump)."""
+"""ExcelReporter: parsed CSV → styled review workbook (per-bucket sheets, governance, stats, raw dump)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,6 @@ import pandas as pd
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from carbontax.config import load_run_config
-from carbontax.paths import parsed_csv, report_xlsx
 from carbontax.taxonomy import GOVERNANCE_FLAGS, MEASURE_IDS, MEASURE_SCOPE, TIER1_BUCKETS
 
 # tier-1 buckets in canonical order, and the tier-2 measures grouped beneath each
@@ -314,17 +312,3 @@ class ExcelReporter:
         )
 
 
-def build_report(input_path: str, dest_path: str) -> None:
-    df = pd.read_csv(input_path, dtype={"chunk_ids": "string"})
-    print(f"Read {len(df)} rows from {input_path}")
-    ExcelReporter(df).write(dest_path)
-    print(f"Wrote workbook → {dest_path}")
-
-
-def main() -> None:
-    run_name = load_run_config()["run_name"]
-    build_report(input_path=parsed_csv(run_name), dest_path=report_xlsx(run_name))
-
-
-if __name__ == "__main__":
-    main()
