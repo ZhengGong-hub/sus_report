@@ -32,14 +32,19 @@ prepare_batch_input:
   min_page_tokens: 50         # drop pages with fewer tokens before chunking
   chunk_max_tokens: 500       # splitter window size
   chunk_overlap_tokens: 100   # splitter overlap between consecutive chunks
+  # batch-input sharding: OpenAI caps one batch at 50k requests AND ~200MB per input file,
+  # so prepare writes an indexed batch_files/ folder, rolling shards at whichever cap hits first
+  max_requests_per_shard: 45000    # headroom under the 50k-request cap
+  max_bytes_per_shard: 188743680   # 180 MiB, headroom under the ~200MB file cap
   filter_keywords:            # a chunk must contain at least one (case-insensitive)
     - carbon
     - emission
 
 # ── Stage 3: openai_batch — submit → status → download → parse ────────────────
-# No tunable settings: the batch JSONL already carries the model and schema;
-# batch id and file locations are tracked in batch_folder/<run_name>/batch_status.db.
-openai_batch: {}
+# The batch JSONL already carries the model and schema; batch ids and file
+# locations are tracked in batch_folder/<run_name>/batch_status.db.
+openai_batch:
+  submit_wait_seconds: 60   # pause between shard submissions (throttle under the enqueued-token cap)
 
 # ── Stage 4: analysis — parsed CSV → review workbook ──────────────────────────
 # (per-bucket sheets, governance, adoption/coverage/accuracy stats, raw dump)

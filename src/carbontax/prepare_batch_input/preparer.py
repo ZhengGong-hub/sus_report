@@ -5,13 +5,21 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 from datetime import datetime, timezone
 
 import pandas as pd
 import tiktoken
 from tqdm import tqdm
 
-from carbontax.paths import batch_jsonl, batch_jsonl_summary, combined_ref, run_dir, skipped_pdfs_json
+from carbontax.paths import (
+    batch_files_dir,
+    batch_jsonl_summary,
+    batch_shard_jsonl,
+    combined_ref,
+    run_dir,
+    skipped_pdfs_json,
+)
 from carbontax.prepare_batch_input.filter import SemanticFilter
 from carbontax.prepare_batch_input.pdf_parser import PDFParser
 from carbontax.prepare_batch_input.splitter import RecursiveTextSplitter
@@ -175,7 +183,11 @@ class BatchInputPreparer:
     # ── step 2: reference parquet → batch JSONL ───────────────────────────────
 
     def build_jsonl(self) -> str:
-        """One combined-schema request per chunk, written to the run folder."""
+        """One combined-schema request per chunk, sharded under OpenAI's per-batch limits.
+
+        OpenAI caps a batch at 50k requests AND ~200MB per input file, so we roll to a
+        fresh indexed shard whenever the next request would breach either configured cap.
+        """
         ref_path = combined_ref(self.run_name)
         if not os.path.exists(ref_path):
             raise FileNotFoundError(f"Reference parquet not found: {ref_path} — run chunk_filings first.")
@@ -186,17 +198,41 @@ class BatchInputPreparer:
         schema = build_combined_schema()
         system_prompt = build_combined_system_prompt()
 
-        out_path = batch_jsonl(self.run_name)
-        with open(out_path, "w", encoding="utf-8") as fh:
-            for _, row in ref_df.iterrows():
-                request = self._build_request(row["chunk_ids"], row["chunks"], schema, system_prompt)
-                fh.write(json.dumps(request, ensure_ascii=False) + "\n")
+        max_rows = self.section["max_requests_per_shard"]
+        max_bytes = self.section["max_bytes_per_shard"]
 
-        logger.info("Wrote %d requests → %s", len(ref_df), out_path)
-        self._write_summary(ref_df, system_prompt)
-        return out_path
+        shards_dir = batch_files_dir(self.run_name)
+        # start clean so a re-run never leaves stale shards alongside the new ones
+        if os.path.isdir(shards_dir):
+            shutil.rmtree(shards_dir)
+        os.makedirs(shards_dir, exist_ok=True)
 
-    def _write_summary(self, ref_df: pd.DataFrame, system_prompt: str) -> str:
+        shard_stats: list[dict] = []  # rows + bytes per shard, for the summary report
+        idx, rows, nbytes = 0, 0, 0
+        fh = open(batch_shard_jsonl(self.run_name, idx), "w", encoding="utf-8")
+        for _, row in ref_df.iterrows():
+            request = self._build_request(row["chunk_ids"], row["chunks"], schema, system_prompt)
+            line = json.dumps(request, ensure_ascii=False) + "\n"
+            line_bytes = len(line.encode("utf-8"))
+            # roll before writing when this line would breach a cap; never split a request,
+            # and rows > 0 guarantees a fresh shard always gets at least one request
+            if rows > 0 and (rows + 1 > max_rows or nbytes + line_bytes > max_bytes):
+                fh.close()
+                shard_stats.append({"rows": rows, "bytes": nbytes})
+                idx += 1
+                fh = open(batch_shard_jsonl(self.run_name, idx), "w", encoding="utf-8")
+                rows, nbytes = 0, 0
+            fh.write(line)
+            rows += 1
+            nbytes += line_bytes
+        fh.close()
+        shard_stats.append({"rows": rows, "bytes": nbytes})
+
+        logger.info("Wrote %d requests across %d shards → %s", len(ref_df), len(shard_stats), shards_dir)
+        self._write_summary(ref_df, system_prompt, shard_stats)
+        return shards_dir
+
+    def _write_summary(self, ref_df: pd.DataFrame, system_prompt: str, shard_stats: list[dict]) -> str:
         """Human-readable markdown report on the batch just written (composition, tokens, cost)."""
         enc = tiktoken.get_encoding("cl100k_base")  # repo-standard tokenizer; model may differ slightly
         tok = ref_df["chunks"].map(lambda c: len(enc.encode(c)))
@@ -223,6 +259,13 @@ class BatchInputPreparer:
 
         def spread(s: pd.Series) -> str:
             return f"{s.mean():.1f} · {s.median():.0f} · {s.min()} · {s.max()}"
+
+        # sharding: OpenAI-limit-driven split of the batch into indexed files
+        n_shards = len(shard_stats)
+        shard_rows = [s["rows"] for s in shard_stats]
+        shard_mib = [s["bytes"] / 1024 / 1024 for s in shard_stats]
+        cap_rows = self.section["max_requests_per_shard"]
+        cap_mib = self.section["max_bytes_per_shard"] / 1024 / 1024
 
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         keywords = ", ".join(self.filter.keywords)
@@ -268,6 +311,15 @@ Generated {now} · model `{self.model}` · prompt `{PROMPT_VERSION}`
 | Chunks per filing | {spread(chunks_per_filing)} |
 | Chunks per company | {spread(chunks_per_company)} |
 | Filings per company | {spread(filings_per_company)} |
+
+## Sharding
+
+| Metric | Value |
+|---|---|
+| Shards written | {n_shards} |
+| Requests per shard — min · max | {min(shard_rows):,} · {max(shard_rows):,} |
+| Shard size MiB — min · max | {min(shard_mib):.1f} · {max(shard_mib):.1f} |
+| Caps (requests / MiB per shard) | {cap_rows:,} / {cap_mib:.0f} |
 
 {skip_section}
 ## Run config context

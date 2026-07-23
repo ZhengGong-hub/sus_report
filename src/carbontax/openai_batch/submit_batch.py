@@ -8,7 +8,8 @@ from carbontax.utils.logger import setup_logging
 
 def main() -> None:
     setup_logging()
-    OpenAIBatchJob(load_run_config(CONFIG_PATH)["run_name"]).submit()
+    cfg = load_run_config(CONFIG_PATH)
+    OpenAIBatchJob(cfg["run_name"]).submit(cfg["openai_batch"]["submit_wait_seconds"])
 
 
 if __name__ == "__main__":
