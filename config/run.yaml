@@ -74,6 +74,6 @@ openai_batch: {}
 
 # ── Stage 4: analysis — parsed CSV → review workbook ──────────────────────────
 # (per-bucket sheets, governance, adoption/coverage/accuracy stats, raw dump)
-# No tunable settings: reads  batch_folder/<run_name>/parsed_v2_combined.csv,
-#                      writes batch_folder/<run_name>/combined_<run_name>_batch.xlsx.
+# No tunable settings: reads  batch_folder/<run_name>/parsed.csv,
+#                      writes batch_folder/<run_name>/report.xlsx.
 analysis: {}

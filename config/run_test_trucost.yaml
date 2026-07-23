@@ -24,38 +24,7 @@ acquire_pdfs:
 
 # ── Stage 2: prepare_batch_input — PDFs → chunks → batch JSONL (local only) ───
 prepare_batch_input:
-  identifier: companyid   # "fileid" or "companyid"; empty/omitted companyid list = all companyids
-  companyid:
-    - 19609
-    - 29325
-    - 34709
-    - 90323
-    - 168151
-    - 218812
-    - 248450
-    - 263232
-    - 270279
-    - 291703
-    - 294382
-    - 297441
-    - 305647
-    - 317627
-    - 328190
-    - 330043
-    - 338134
-    - 343729
-    - 366230
-    - 6569181
-    - 9425271
-    - 27447874
-    - 35962803
-    - 52289160
-    - 208736100
-    - 244370933
-    - 256906841
-    - 273983758
-    - 276763615
-    - 639215906
+  identifier: trucost_companyid   # "fileid" or "companyid"; empty/omitted companyid list = all companyids or "trucost_companyid"
   model: gpt-5.4-mini         # stamped into the ref parquet and every batch request
   max_chunks_per_file: 50     # cap per filing; null = no cap
   chunk_selection: random     # head | random — how to pick when a filing exceeds max_chunks_per_file
@@ -80,6 +49,6 @@ openai_batch: {}
 
 # ── Stage 4: analysis — parsed CSV → review workbook ──────────────────────────
 # (per-bucket sheets, governance, adoption/coverage/accuracy stats, raw dump)
-# No tunable settings: reads  batch_folder/<run_name>/parsed_v2_combined.csv,
-#                      writes batch_folder/<run_name>/combined_<run_name>_batch.xlsx.
+# No tunable settings: reads  batch_folder/<run_name>/parsed.csv,
+#                      writes batch_folder/<run_name>/report.xlsx.
 analysis: {}
