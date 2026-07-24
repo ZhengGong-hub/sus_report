@@ -2,3 +2,4 @@
 
 # One switch for every stage-3 command: which run config all of them read.
 CONFIG_PATH = "config/run_test_trucost.yaml"
+# CONFIG_PATH = "config/run.yaml"

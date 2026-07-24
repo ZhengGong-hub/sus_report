@@ -55,7 +55,7 @@ prepare_batch_input:
     - 273983758
     - 276763615
     - 639215906
-  model: gpt-5.4-mini         # stamped into the ref parquet and every batch request
+  model: gpt-5.4-nano         # stamped into the ref parquet and every batch request
   temperature: 0              # request temperature; null = omit (some gpt-5 models reject non-default values)
   max_chunks_per_file: 20     # cap per filing; null = no cap
   chunk_selection: random     # head | random — how to pick when a filing exceeds max_chunks_per_file
@@ -64,6 +64,7 @@ prepare_batch_input:
   min_page_tokens: 50         # drop pages with fewer tokens before chunking
   chunk_max_tokens: 500       # splitter window size
   chunk_overlap_tokens: 100   # splitter overlap between consecutive chunks
+  chunk_workers: 4            # parallel processes for PDF chunking (CPU-bound; raise toward core count)
   # batch-input sharding: OpenAI caps one batch at 50k requests AND ~200MB per input file,
   # so prepare writes an indexed batch_files/ folder, rolling shards at whichever cap hits first
   max_requests_per_shard: 45000    # headroom under the 50k-request cap

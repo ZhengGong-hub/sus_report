@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import shutil
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -41,6 +42,7 @@ class BatchInputPreparer:
         self.model = section["model"]
         # request temperature; null in config = omit it (gpt-5 reasoning models reject any non-default value)
         self.temperature = section["temperature"]
+        self.chunk_workers = section["chunk_workers"]  # parallel PDF-chunking processes
         self.min_page_tokens = section["min_page_tokens"]
         self.input_price_per_1m_usd = section["input_price_per_1m_usd"]  # for the batch cost estimate
         # how to pick chunks when a filing exceeds max_chunks_per_file; seed makes random reproducible
@@ -62,33 +64,48 @@ class BatchInputPreparer:
     # ── step 1: PDFs → reference parquet ──────────────────────────────────────
 
     def chunk_filings(self) -> str:
-        """Chunk every configured filing; write the reference parquet to the run folder."""
+        """Chunk every configured filing across chunk_workers processes; write the reference parquet.
+
+        Each PDF is independent and the work is CPU-bound (pymupdf parse + tiktoken), so we fan the
+        filings out over a process pool. Missing/corrupt PDFs are reported by the workers, not raised,
+        so one bad file never sinks a long run.
+        """
         fileids = self._resolve_fileids()
 
-        ref_frames: list[pd.DataFrame] = []
         missing: list[int] = []          # no PDF on disk (expected: not every filing was downloaded)
-        corrupt: list[dict] = []         # PDF present but unreadable — skip so a long run isn't lost
-        for fileid in tqdm(fileids, desc="Chunking filings", unit="pdf"):
-            if not os.path.exists(f"{self.pdfs_dir}/{fileid}.pdf"):
-                logger.warning("PDF not found for fileid=%s — skipping", fileid)
-                missing.append(int(fileid))
-                continue
-            try:
-                ref_frames.append(self._chunk_one_filing(str(fileid)))
-            except Exception as err:  # corrupt/unreadable PDF (e.g. pymupdf.FileDataError)
-                logger.warning("Failed to parse fileid=%s (%s: %s) — skipping",
-                               fileid, type(err).__name__, err)
-                corrupt.append({"fileid": int(fileid), "error": f"{type(err).__name__}: {err}"})
+        corrupt: list[dict] = []         # PDF present but unreadable — recorded so a long run isn't lost
+        results: list[tuple[int, pd.DataFrame]] = []
+        initargs = (
+            self.pdfs_dir, self.min_page_tokens, self.section["max_chunks_per_file"],
+            self.chunk_selection, self.chunk_sample_seed, self.model,
+            self.section["chunk_max_tokens"], self.section["chunk_overlap_tokens"],
+            self.section["filter_keywords"],
+        )
+        with ProcessPoolExecutor(max_workers=self.chunk_workers,
+                                 initializer=_init_chunk_worker, initargs=initargs) as ex:
+            futures = [ex.submit(_chunk_worker, int(fid)) for fid in fileids]
+            for fut in tqdm(as_completed(futures), total=len(futures), desc="Chunking filings", unit="pdf"):
+                r = fut.result()  # the worker never raises — it returns missing/corrupt as data
+                if r["missing"]:
+                    logger.warning("PDF not found for fileid=%s — skipping", r["fileid"])
+                    missing.append(r["fileid"])
+                elif r["error"]:
+                    logger.warning("Failed to parse fileid=%s (%s) — skipping", r["fileid"], r["error"])
+                    corrupt.append({"fileid": r["fileid"], "error": r["error"]})
+                else:
+                    results.append((r["fileid"], r["df"]))
 
         os.makedirs(run_dir(self.run_name), exist_ok=True)
         self._write_skipped(len(fileids), missing, corrupt)
-        if not ref_frames:
+        if not results:
             raise ValueError(
                 f"No filings could be chunked: {len(missing)} missing, {len(corrupt)} corrupt "
                 f"out of {len(fileids)} requested — see {skipped_pdfs_json(self.run_name)}")
 
+        # sort by fileid so the parquet is byte-stable regardless of worker completion order
+        results.sort(key=lambda p: p[0])
+        reference_df = pd.concat([df for _, df in results], ignore_index=True)
         # join company metadata (companyid, companyname, filingDate) onto every chunk
-        reference_df = pd.concat(ref_frames, ignore_index=True)
         mapping = self._load_mapping(fileids=reference_df["filingId"].unique().tolist())
         reference_df = reference_df.merge(
             mapping[["companyid", "companyname", "filingDate", "filingId"]],
@@ -139,40 +156,11 @@ class BatchInputPreparer:
         return fileids
 
     def _chunk_one_filing(self, fileid: str) -> pd.DataFrame:
-        logger.info("Processing fileid=%s", fileid)
-
-        # PDF → page-level text, dropping headers/footers and near-empty pages
-        blocks = self.parser.parse(f"{self.pdfs_dir}/{fileid}.pdf")
-        agg_df = blocks.groupby("page_ind", as_index=False).agg({"text": " ".join})
-        agg_df = self.parser.add_token_length(agg_df)
-        agg_df = agg_df[agg_df["token_length"] > self.min_page_tokens].reset_index(drop=True)
-
-        # one string with [PAGE N] markers → token-window chunks with overlap
-        flat_text = "\n\n".join(
-            f"[PAGE {row.page_ind}]\n{row.text}" for row in agg_df.itertuples(index=False)
+        # thin wrapper over the module-level impl (which the parallel workers also call)
+        return _chunk_one_filing_impl(
+            fileid, self.parser, self.splitter, self.filter, self.pdfs_dir, self.min_page_tokens,
+            self.section["max_chunks_per_file"], self.chunk_selection, self.chunk_sample_seed, self.model,
         )
-        chunks_df = self.splitter.split(flat_text, chunk_id_prefix=fileid)
-        logger.info("Recursive split produced %d chunks", len(chunks_df))
-
-        # keep only carbon/emission-relevant chunks
-        filtered = self.filter.filter(chunks_df, use_llm_classification=False)
-        logger.info("Semantic filter: %d chunks remaining", len(filtered))
-
-        max_chunks = self.section["max_chunks_per_file"]  # null in YAML = no cap
-        if max_chunks is not None and len(filtered) > max_chunks:
-            if self.chunk_selection == "head":
-                filtered = filtered.head(max_chunks)
-            else:  # "random" — seeded so re-chunking reproduces the same draw
-                filtered = filtered.sample(n=max_chunks, random_state=self.chunk_sample_seed).sort_index()
-            logger.info("Capped to %d chunks (%s) for fileid=%s", max_chunks, self.chunk_selection, fileid)
-
-        return pd.DataFrame({
-            "filingId": int(fileid),
-            "chunks": filtered["chunk"].tolist(),
-            "chunk_ids": filtered["chunk_id"].tolist(),
-            "prompt_version": PROMPT_VERSION,
-            "model": self.model,
-        })
 
     def _load_mapping(self, companyids: list[int] = None, fileids: list[int] = None) -> pd.DataFrame:
         df = pd.read_csv(self.mapping_csv)
@@ -190,6 +178,11 @@ class BatchInputPreparer:
         OpenAI caps a batch at 50k requests, ~200MB per input file, AND an enqueued-token
         budget per model — so we roll to a fresh indexed shard whenever the next request
         would breach any configured cap. The token cap is usually the one that binds.
+
+        Each shard is written to a .partial file and atomically renamed to batch_NNN.jsonl
+        only once complete. batch_shards() globs batch_*.jsonl, so it never sees a half-written
+        shard — you can run submit repeatedly while this is still generating, and each run picks
+        up whatever shards have finished so far.
         """
         ref_path = combined_ref(self.run_name)
         if not os.path.exists(ref_path):
@@ -201,13 +194,12 @@ class BatchInputPreparer:
         schema = build_combined_schema()
         system_prompt = build_combined_system_prompt()
 
-        # per-request input tokens = system prompt (fixed) + chunk; counted once here and
-        # reused by _write_summary. tiktoken/cl100k_base is an estimate — the token cap
-        # keeps headroom under OpenAI's real enqueued-token limit to absorb the difference.
+        # per-request input tokens = system prompt (fixed) + chunk. The chunk count is done
+        # lazily inside the loop (NOT eagerly over the whole frame) so the first shard is
+        # written within seconds instead of after tokenizing all rows. tiktoken/cl100k_base is
+        # an estimate — the token cap keeps headroom under OpenAI's real enqueued-token limit.
         enc = tiktoken.get_encoding("cl100k_base")
         system_tokens = len(enc.encode(system_prompt))
-        chunk_tokens = ref_df["chunks"].map(lambda c: len(enc.encode(c)))
-        req_tokens = (chunk_tokens + system_tokens).tolist()  # positional, aligned with ref_df
 
         max_rows = self.section["max_requests_per_shard"]
         max_bytes = self.section["max_bytes_per_shard"]
@@ -220,27 +212,38 @@ class BatchInputPreparer:
         os.makedirs(shards_dir, exist_ok=True)
 
         shard_stats: list[dict] = []  # rows + bytes + tokens per shard, for the summary report
+        chunk_tokens_acc: list[int] = []  # per-chunk token counts, collected for _write_summary
+
+        def finalize(i: int, fh, rows: int, nbytes: int, ntok: int) -> None:
+            # close, then atomically publish: the .jsonl name appears only when the shard is whole
+            fh.close()
+            os.replace(batch_shard_jsonl(self.run_name, i) + ".partial", batch_shard_jsonl(self.run_name, i))
+            shard_stats.append({"rows": rows, "bytes": nbytes, "tokens": ntok})
+            logger.info("Shard %d ready: %d requests · %.1f MiB · %.1fM tokens", i, rows, nbytes / 1024 / 1024, ntok / 1e6)
+
         idx, rows, nbytes, ntok = 0, 0, 0, 0
-        fh = open(batch_shard_jsonl(self.run_name, idx), "w", encoding="utf-8")
-        for pos, (_, row) in enumerate(ref_df.iterrows()):
+        fh = open(batch_shard_jsonl(self.run_name, idx) + ".partial", "w", encoding="utf-8")
+        for _, row in ref_df.iterrows():
             request = self._build_request(row["chunk_ids"], row["chunks"], schema, system_prompt)
             line = json.dumps(request, ensure_ascii=False) + "\n"
             line_bytes = len(line.encode("utf-8"))
-            rtok = req_tokens[pos]
+            ctok = len(enc.encode(row["chunks"]))
+            chunk_tokens_acc.append(ctok)
+            rtok = system_tokens + ctok
             # roll before writing when this line would breach any cap; never split a request,
             # and rows > 0 guarantees a fresh shard always gets at least one request
             if rows > 0 and (rows + 1 > max_rows or nbytes + line_bytes > max_bytes or ntok + rtok > max_tokens):
-                fh.close()
-                shard_stats.append({"rows": rows, "bytes": nbytes, "tokens": ntok})
+                finalize(idx, fh, rows, nbytes, ntok)
                 idx += 1
-                fh = open(batch_shard_jsonl(self.run_name, idx), "w", encoding="utf-8")
+                fh = open(batch_shard_jsonl(self.run_name, idx) + ".partial", "w", encoding="utf-8")
                 rows, nbytes, ntok = 0, 0, 0
             fh.write(line)
             rows += 1
             nbytes += line_bytes
             ntok += rtok
-        fh.close()
-        shard_stats.append({"rows": rows, "bytes": nbytes, "tokens": ntok})
+        finalize(idx, fh, rows, nbytes, ntok)
+
+        chunk_tokens = pd.Series(chunk_tokens_acc, index=ref_df.index)  # for the summary token stats
 
         logger.info("Wrote %d requests across %d shards → %s", len(ref_df), len(shard_stats), shards_dir)
         self._write_summary(ref_df, chunk_tokens, system_tokens, shard_stats)
@@ -412,3 +415,82 @@ the configured (already batch-discounted) rate.*
             "url": "/v1/chat/completions",
             "body": body,
         }
+
+
+# ── parallel chunking ─────────────────────────────────────────────────────────
+# ProcessPoolExecutor uses the 'spawn' start method on macOS, so the worker and its
+# initializer must be importable module-level functions, not closures over the instance.
+
+def _chunk_one_filing_impl(fileid: str, parser: PDFParser, splitter: RecursiveTextSplitter,
+                           filt: SemanticFilter, pdfs_dir: str, min_page_tokens: int,
+                           max_chunks: int | None, chunk_selection: str,
+                           chunk_sample_seed: int, model: str) -> pd.DataFrame:
+    """One filing → its filtered, capped chunks as a reference frame (parser/splitter/filter injected)."""
+    logger.info("Processing fileid=%s", fileid)
+
+    # PDF → page-level text, dropping headers/footers and near-empty pages
+    blocks = parser.parse(f"{pdfs_dir}/{fileid}.pdf")
+    agg_df = blocks.groupby("page_ind", as_index=False).agg({"text": " ".join})
+    agg_df = parser.add_token_length(agg_df)
+    agg_df = agg_df[agg_df["token_length"] > min_page_tokens].reset_index(drop=True)
+
+    # one string with [PAGE N] markers → token-window chunks with overlap
+    flat_text = "\n\n".join(
+        f"[PAGE {row.page_ind}]\n{row.text}" for row in agg_df.itertuples(index=False)
+    )
+    chunks_df = splitter.split(flat_text, chunk_id_prefix=fileid)
+    logger.info("Recursive split produced %d chunks", len(chunks_df))
+
+    # keep only carbon/emission-relevant chunks
+    filtered = filt.filter(chunks_df, use_llm_classification=False)
+    logger.info("Semantic filter: %d chunks remaining", len(filtered))
+
+    if max_chunks is not None and len(filtered) > max_chunks:  # null in YAML = no cap
+        if chunk_selection == "head":
+            filtered = filtered.head(max_chunks)
+        else:  # "random" — seeded so re-chunking reproduces the same draw
+            filtered = filtered.sample(n=max_chunks, random_state=chunk_sample_seed).sort_index()
+        logger.info("Capped to %d chunks (%s) for fileid=%s", max_chunks, chunk_selection, fileid)
+
+    return pd.DataFrame({
+        "filingId": int(fileid),
+        "chunks": filtered["chunk"].tolist(),
+        "chunk_ids": filtered["chunk_id"].tolist(),
+        "prompt_version": PROMPT_VERSION,
+        "model": model,
+    })
+
+
+_WORKER: dict = {}  # per-process chunking context, populated once per worker by the initializer
+
+
+def _init_chunk_worker(pdfs_dir, min_page_tokens, max_chunks, chunk_selection, chunk_sample_seed,
+                       model, chunk_max_tokens, chunk_overlap_tokens, filter_keywords) -> None:
+    # build one parser/splitter/filter per process — they hold tiktoken encoders that don't
+    # pickle cleanly, so we construct them here rather than ship them from the parent
+    _WORKER.update(
+        parser=PDFParser(),
+        splitter=RecursiveTextSplitter(max_length=chunk_max_tokens, overlap=chunk_overlap_tokens),
+        filter=SemanticFilter(keywords=filter_keywords),
+        pdfs_dir=pdfs_dir,
+        min_page_tokens=min_page_tokens,
+        max_chunks=max_chunks,
+        chunk_selection=chunk_selection,
+        chunk_sample_seed=chunk_sample_seed,
+        model=model,
+    )
+
+
+def _chunk_worker(fileid: int) -> dict:
+    """Chunk one filing in a worker process; report missing/corrupt PDFs as data, never raise."""
+    if not os.path.exists(f"{_WORKER['pdfs_dir']}/{fileid}.pdf"):
+        return {"fileid": int(fileid), "df": None, "missing": True, "error": None}
+    try:
+        df = _chunk_one_filing_impl(
+            str(fileid), _WORKER["parser"], _WORKER["splitter"], _WORKER["filter"],
+            _WORKER["pdfs_dir"], _WORKER["min_page_tokens"], _WORKER["max_chunks"],
+            _WORKER["chunk_selection"], _WORKER["chunk_sample_seed"], _WORKER["model"],
+        )
+        return {"fileid": int(fileid), "df": df, "missing": False, "error": None}
+    except Exception as err:  # corrupt/unreadable PDF (e.g. pymupdf.FileDataError)
+        return {"fileid": int(fileid), "df": None, "missing": False, "error": f"{type(err).__name__}: {err}"}
