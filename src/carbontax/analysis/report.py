@@ -16,8 +16,12 @@ def build_report(input_path: str, dest_path: str) -> None:
 
 
 def main() -> None:
-    run_name = load_run_config(CONFIG_PATH)["run_name"]
-    build_report(input_path=parsed_csv(run_name), dest_path=report_xlsx(run_name))
+    cfg = load_run_config(CONFIG_PATH)
+    run_name = cfg["run_name"]
+    # same switch as stage 3: preview mode reads parsed_aggregated_batch_output__preview.csv → report__preview.xlsx,
+    # leaving the canonical report.xlsx untouched
+    preview = cfg["openai_batch"]["allow_partial"]
+    build_report(input_path=parsed_csv(run_name, preview=preview), dest_path=report_xlsx(run_name, preview=preview))
 
 
 if __name__ == "__main__":

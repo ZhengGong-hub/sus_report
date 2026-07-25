@@ -9,11 +9,8 @@ import re
 
 import pandas as pd
 
-from carbontax.config import load_run_config
-from carbontax.openai_batch import CONFIG_PATH
 from carbontax.paths import combined_ref, output_csv, parsed_csv
 from carbontax.taxonomy import MEASURE_IDS, GOVERNANCE_FLAGS, TIER1_BUCKETS
-from carbontax.utils.logger import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +50,11 @@ def flatten_row(row: pd.Series) -> dict:
     return flat
 
 
-def parse_output(run_name: str) -> pd.DataFrame:
-    output_path = output_csv(run_name)
+def parse_output(run_name: str, preview: bool = False) -> pd.DataFrame:
+    # preview=True reads the completed-shards-only aggregated_output_batch_results__preview.csv and writes
+    # parsed_aggregated_batch_output__preview.csv;
+    # chunks from not-yet-downloaded shards survive the left-join below with null flag columns (null model_y)
+    output_path = output_csv(run_name, preview=preview)
     if not os.path.exists(output_path):
         raise FileNotFoundError(f"Output CSV not found: {output_path} — run the download step first.")
 
@@ -73,17 +73,8 @@ def parse_output(run_name: str) -> pd.DataFrame:
 
     result = result.apply(lambda col: col.map(_clean) if col.dtype == object else col)
 
-    dest_path = parsed_csv(run_name)
+    dest_path = parsed_csv(run_name, preview=preview)
     os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
     result.to_csv(dest_path, index=False)
     logger.info("Wrote %d rows → %s", len(result), dest_path)
     return result
-
-
-def main() -> None:
-    setup_logging()
-    parse_output(load_run_config(CONFIG_PATH)["run_name"])
-
-
-if __name__ == "__main__":
-    main()

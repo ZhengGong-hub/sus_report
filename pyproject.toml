@@ -35,8 +35,7 @@ carbontax-mapping  = "carbontax.acquire_pdfs.mapping:main"
 carbontax-prepare  = "carbontax.prepare_batch_input.prepare:main"
 carbontax-submit   = "carbontax.openai_batch.submit_batch:main"
 carbontax-status   = "carbontax.openai_batch.check_status:main"
-carbontax-download = "carbontax.openai_batch.download_batch:main"
-carbontax-parse    = "carbontax.openai_batch.parse_output:main"
+carbontax-download-and-parse = "carbontax.openai_batch.download_and_parse_batch:main"
 carbontax-report   = "carbontax.analysis.report:main"
 
 [tool.black]

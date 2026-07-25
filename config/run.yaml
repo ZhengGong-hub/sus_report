@@ -79,9 +79,13 @@ prepare_batch_input:
 # locations are tracked in batch_folder/<run_name>/batch_status.db.
 openai_batch:
   submit_wait_seconds: 60   # pause between shard submissions (throttle under the enqueued-token cap)
+  # true = preview mode: download/parse/report use only the COMPLETED shards and write *__preview files
+  # (aggregated_output_batch_results__preview.csv, parsed_aggregated_batch_output__preview.csv, report__preview.xlsx), never touching the canonical
+  # artifacts. A biased subset — shards are contiguous filingId blocks, not a random sample — for peeking only.
+  allow_partial: false
 
 # ── Stage 4: analysis — parsed CSV → review workbook ──────────────────────────
 # (per-bucket sheets, governance, adoption/coverage/accuracy stats, raw dump)
-# No tunable settings: reads  batch_folder/<run_name>/parsed.csv,
+# No tunable settings: reads  batch_folder/<run_name>/parsed_aggregated_batch_output.csv,
 #                      writes batch_folder/<run_name>/report.xlsx.
 analysis: {}

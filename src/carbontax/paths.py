@@ -47,13 +47,28 @@ def skipped_pdfs_json(run_name: str) -> str:  # fileids skipped (missing/corrupt
     return os.path.join(run_dir(run_name), "skipped_pdfs.json")
 
 
-def output_csv(run_name: str) -> str:  # regulated output    (written by download; named by the wrapper)
-    return os.path.join(run_dir(run_name), f"output_{JOB_ID}.csv")
+# preview=True appends __preview so a partial (completed-shards-only) run never clobbers the
+# canonical artifact — see openai_batch.allow_partial in the run config.
+def output_csv(run_name: str, preview: bool = False) -> str:  # regulated output (written by download)
+    suffix = "__preview" if preview else ""
+    return os.path.join(run_dir(run_name), f"aggregated_output_batch_results{suffix}.csv")
 
 
-def parsed_csv(run_name: str) -> str:  # analysis-ready flags, one row per chunk (written by parse)
-    return os.path.join(run_dir(run_name), "parsed.csv")
+# per-shard outputs the wrapper writes during download, tucked into batch_output/{csv,jsonl}/ so
+# a many-shard run doesn't clutter the run root (the merged aggregated_output_batch_results.csv still lives above)
+def shard_output_csv_dir(run_name: str) -> str:  # per-shard regulated CSVs
+    return os.path.join(run_dir(run_name), "batch_output", "csv")
 
 
-def report_xlsx(run_name: str) -> str:  # review workbook     (written by report)
-    return os.path.join(run_dir(run_name), "report.xlsx")
+def shard_output_jsonl_dir(run_name: str) -> str:  # per-shard raw JSONL
+    return os.path.join(run_dir(run_name), "batch_output", "jsonl")
+
+
+def parsed_csv(run_name: str, preview: bool = False) -> str:  # analysis-ready flags, one row per chunk (written by parse)
+    suffix = "__preview" if preview else ""
+    return os.path.join(run_dir(run_name), f"parsed_aggregated_batch_output{suffix}.csv")
+
+
+def report_xlsx(run_name: str, preview: bool = False) -> str:  # review workbook (written by report)
+    suffix = "__preview" if preview else ""
+    return os.path.join(run_dir(run_name), f"report{suffix}.xlsx")
