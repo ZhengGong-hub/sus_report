@@ -1,0 +1,488 @@
+% summary.tex — 5-page project summary: LLM-extracted carbon-reduction measures × Trucost emissions panel
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{caption}
+\usepackage[hidelinks]{hyperref}
+\usepackage{microtype}
+
+\captionsetup{font=small,labelfont=bf}
+\setlength{\parskip}{0.25em}
+
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+\title{\textbf{What Actually Reduces Corporate Carbon?}\\[0.3em]
+\large A Two-Tier LLM Taxonomy of Sustainability-Report Measures\\
+Linked to the Trucost Emissions Panel}
+\author{Zheng Gong}
+\date{\today}
+
+\begin{document}
+\maketitle
+\vspace{-1.5em}
+
+%======================================================================
+\section{Research question and contribution}
+%======================================================================
+
+Firms publish long sustainability reports describing what they are doing about
+climate change. Almost none of that text has been converted into
+analysis-ready data. The literature instead studies either (i) \emph{disclosed
+numbers} --- LLM pipelines that extract Scope~1/2/3 tonnages from PDFs, (ii)
+\emph{disclosure quality} --- ClimateBERT/ChatReport-style scoring of TCFD
+alignment and greenwashing, or (iii) \emph{panel regressions on CDP data},
+which are bounded by CDP's voluntary respondents and CDP's own pre-defined
+answer options. Nobody has taken the full text of the report, coded the
+\emph{specific abatement actions} it describes into a standards-anchored
+taxonomy, and asked whether those actions show up in realised emissions.
+
+That is this project. The research question is deliberately blunt:
+
+\begin{quote}
+\textbf{Which carbon-reduction measures actually reduce carbon?} Conditional
+on a firm adopting measure $m$, does the emission category that measure $m$
+targets fall relative to the categories it does not target --- and which firm
+characteristics predict both the \emph{choice} of measure and the
+\emph{effectiveness} of that measure once chosen?
+\end{quote}
+
+Three things make the design work. First, the taxonomy is anchored in the GHG
+Protocol scope architecture, so it is defensible to referees and, critically,
+\emph{it maps one-to-one onto the outcome data}. Second, the outcome data
+(S\&P Global Trucost, via WRDS) reports emissions at the same Scope~3 category
+granularity that the GHG Protocol defines, which means a measure targeting
+employee commuting has a matched outcome variable distinct from a measure
+targeting use-phase emissions. Third, that matching delivers a
+within-firm-year identification strategy: the untargeted categories of the
+same firm in the same year act as the control group, absorbing everything
+firm-specific --- growth, sector shocks, disclosure propensity, greenwashing
+taste --- in a firm$\times$year fixed effect.
+
+The deliverables are (a) a firm-year panel of $\approx$30 binary adoption
+indicators for 1{,}892 US firms over 2015--2025, built from 11{,}756 report
+PDFs; (b) estimates of the emission response to each measure, overall and by
+targeted emission category; and (c) a map of which firm characteristics
+operate through \emph{measure composition} versus \emph{measure efficacy}.
+
+%======================================================================
+\section{Measurement: the two-tier taxonomy}
+%======================================================================
+
+A single-level taxonomy forces a bad trade-off. Coarse categories throw away
+the interesting variation; fine categories become unreliable when the LLM has
+to read vague corporate prose. The taxonomy is therefore two-tiered, so that
+extraction failure degrades gracefully rather than producing a missing
+observation.
+
+\textbf{Tier 1} is five high-level buckets tracking the accounting boundary of
+the GHG Protocol: \textbf{S1} (direct emissions, Corporate Standard 2004),
+\textbf{S2} (purchased energy, Scope~2 Guidance 2015), \textbf{S3U} (upstream
+value chain, Categories 1--8), \textbf{S3D} (downstream value chain,
+Categories 9--15), and \textbf{CDR} (removals and offsets, drawn from IPCC AR6
+WGIII and the SBTi Corporate Net-Zero Standard). If a passage says only
+``we reduced our operational footprint,'' Tier~1 still records S1 even though
+no specific measure is identifiable.
+
+\textbf{Tier 2} decomposes each bucket into 30 named measures. For Scope~3 the
+structure is pre-given: the GHG Protocol fixes 15 categories, so the measure
+list is not a judgement call. For Scopes~1 and 2 the measures are drawn from
+IPCC AR6 WGIII Chapters 6, 9 and 11, the EU Taxonomy Regulation 2020/852, and
+the Scope~2 Guidance. Two measures were added after a pilot revealed
+systematic leakage (\code{renewable\_electricity\_general}, for renewable
+power procured with no named instrument, and \code{packaging}); one Scope-3
+category was split into supplier engagement versus material substitution
+because the two are economically distinct and frequently co-occur.
+
+\textbf{Governance} is treated as a parallel regressor set, not a Tier-1
+bucket, because it is not a scope boundary: SBTi target validation, an
+internal carbon price, executive compensation linked to emissions, and
+third-party assurance. Keeping them separate lets us test whether governance
+mechanisms predict realised abatement \emph{over and above} operational
+measures --- a clean corporate-finance question in its own right.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Taxonomy structure. 5 Tier-1 buckets, 30 Tier-2 measures, 4 governance flags.}
+\begin{tabular}{@{}llp{9.2cm}@{}}
+\toprule
+\textbf{Tier 1} & \textbf{$n$} & \textbf{Tier-2 measures} \\
+\midrule
+S1  & 6 & energy efficiency; fuel switching / electrification; on-site renewables; F-gas substitution; methane \& fugitive capture; process emissions \\
+S2  & 4 & PPA; REC/GoO; unspecified renewable electricity; low-carbon heat \& steam \\
+S3U & 10 & c1 supplier engagement; c1 material substitution; c2 capital goods; c3 fuel \& energy; c4 upstream transport; c5 waste; c6 business travel; c7 commuting; c8 upstream leased; packaging \\
+S3D & 7 & c9 downstream transport; c10 processing; c11 use phase; c12 end-of-life; c13 downstream leased; c14 franchises; c15 investments \\
+CDR & 3 & nature-based removals; engineered CDR (DACCS/BECCS/biochar); voluntary offsets \\
+\midrule
+\multicolumn{3}{@{}l@{}}{\textbf{Governance (parallel):} SBTi target; internal carbon price; emission-linked executive pay; third-party assurance} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The taxonomy lives in exactly one place in the code base
+(\code{src/carbontax/taxonomy.py}); the LLM system prompt and the JSON
+response schema are both \emph{derived} from that object rather than written
+by hand, because prompt--schema drift is the dominant failure mode in this
+kind of pipeline.
+
+%======================================================================
+\section{Extraction pipeline}
+%======================================================================
+
+The pipeline runs in four configuration-driven stages with no command-line
+arguments; every knob is explicit in \code{config/run.yaml}.
+
+\textbf{(1) Acquisition.} Sustainability-report PDFs are pulled from S\&P
+Capital IQ for the Trucost company universe, giving a company$\leftrightarrow$filing
+mapping of 13{,}273 filings. Of 13{,}177 filings requested for processing,
+13{,}154 had a readable PDF (14 never downloaded, 9 corrupt).
+
+\textbf{(2) Chunking.} Each PDF is parsed to text blocks with PyMuPDF,
+repeated headers/footers are dropped by frequency, pages below 200 tokens are
+discarded, and the remainder is split into 950-token windows with 50-token
+overlap and \code{[PAGE~$n$]} markers preserved for traceability. A
+case-insensitive keyword prefilter (\emph{carbon, emission, renewable, solar,
+wind turbine, wind power, energy efficiency}) retains only climate-relevant
+windows, and each filing is capped at 50 chunks by seeded random sampling.
+Result: \textbf{177{,}041 chunks} from \textbf{11{,}756 filings} across
+\textbf{1{,}892 companies} (median 10 chunks per filing, 35 per company).
+
+\textbf{(3) Extraction.} One request per chunk to the OpenAI Batch API
+(\code{gpt-5.4-nano}, temperature 0, strict JSON schema, prompt version
+v2.2), sharded into 26 batches under the 20M enqueued-token cap. The schema is
+deliberately flat --- 42 boolean properties, well under the 100-property
+structured-output limit --- because a per-measure
+\code{\{adopted, quote, page\}} object would have exceeded it. The prompt
+imposes an \emph{action-not-mention} rule (``a measure is true only when the
+chunk describes an action that reduces this source, not a mention that the
+source exists'') and an \emph{aspiration} rule (``committed to\ldots'' and
+``target to\ldots'' are false for measures, true for governance flags, since a
+governance mechanism \emph{is} the commitment). Total input: 252.9M tokens,
+$\approx$\$95 at batch-discounted rates --- i.e.\ \$0.05 per company, which is
+what makes a wide-universe design feasible at all.
+
+\textbf{(4) Aggregation.} Chunk-level flags are rolled up to the filing and
+then the firm-year by taking the maximum: a measure is adopted if any chunk of
+any report the firm filed that year evidences it. This yields
+\textbf{8{,}090 firm-years} of adoption indicators.
+
+%======================================================================
+\section{Outcome data: Trucost Environmental (WRDS)}
+%======================================================================
+
+The dependent variables come from the WRDS \code{trucost\_environ} table
+(21.1M rows, period end dates 2002--2026). The extract used here is the US
+universe: \textbf{2{,}040 firms, 26{,}846 firm-years, FY2002--2026}, with
+Scope~1, Scope~2 location-based, Scope~3 upstream total and Trucost revenue
+populated for 99.9\% of rows. Merging the extraction panel to Trucost on
+\code{companyid} $\times$ fiscal year retains \textbf{7{,}944} firm-years
+contemporaneously and \textbf{7{,}864} at a one-year lag --- essentially no
+attrition, because the report universe was drawn from the Trucost universe by
+construction.
+
+The decisive feature is the category-level Scope~3 detail, which lines up with
+the Tier-2 taxonomy almost measure-for-measure (Table~\ref{tab:map}).
+
+\begin{table}[t]
+\centering
+\small
+\caption{Matched action$\rightarrow$outcome pairs. This mapping is what makes the
+within-firm-year design possible.}
+\label{tab:map}
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Tier-2 measure} & \textbf{Trucost outcome} & \textbf{Variable} & \textbf{Coverage} \\
+\midrule
+S1 measures (6)            & Absolute GHG Scope 1                & \code{di\_319413} / \code{di\_376883} & 99.9\% \\
+S2 measures (4)            & Scope 2 location-based              & \code{di\_319414} / \code{di\_376884} & 99.9\% \\
+\quad PPA, REC/GoO         & Scope 2 \emph{market-based}         & \code{di\_367750} / \code{di\_376886} & 9.5\% \\
+c1 supplier / material     & Purchased goods \& services         & \code{di\_378459} & as-reported \\
+c2 capital goods           & Capital goods                       & \code{di\_378680} & as-reported \\
+c3 fuel \& energy          & Fuel \& energy services             & \code{di\_378681} & as-reported \\
+c4 upstream transport, c6 travel & Upstream T\&D + business travel (pooled) & \code{di\_378682} & as-reported \\
+c5 waste                   & Waste generated                     & \code{di\_378683} & as-reported \\
+c7 commuting               & Employee commuting                  & \code{di\_378684} & as-reported \\
+c8 upstream leased         & Upstream leased assets              & \code{di\_378685} & as-reported \\
+c9 downstream transport    & Downstream T\&D                     & \code{di\_368652} & as-reported \\
+c10 processing             & Processing of sold products         & \code{di\_368653} & as-reported \\
+c11 use phase              & Use of sold products                & \code{di\_368654} & as-reported \\
+c12 end-of-life            & EOL treatment of sold products      & \code{di\_368655} & as-reported \\
+c13 downstream leased      & Downstream leased assets            & \code{di\_368704} & as-reported \\
+c14 franchises             & Franchises                          & \code{di\_368705} & as-reported \\
+c15 investments            & Investments (financed emissions)    & \code{di\_368706} & as-reported \\
+CDR measures (3)           & \emph{no inventory counterpart}     & ---               & --- \\
+\midrule
+Scale / deflator           & Trucost total revenue               & \code{di\_319522} & 99.9\% \\
+Disclosure quality         & Weighted disclosure: GHG, Environmental & \code{di\_319416}, \code{di\_329704} & 99.9\% \\
+Per-scope disclosure score & GHG Scope 1/2/3 scores              & \code{di\_387688}--\code{di\_387726} & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three constraints follow directly and shape the empirical design. (i) The
+theoretically correct outcome for PPAs and RECs is \emph{market-based} Scope~2,
+which is populated for only 9.5\% of firm-years --- so instrument-specific S2
+measures are estimable only on a much smaller sub-panel, while
+location-based S2 is the right outcome for on-site generation and efficiency.
+(ii) Trucost pools upstream transport with business travel, so c4 and c6
+cannot be separated on the outcome side even though the taxonomy separates
+them on the action side. (iii) CDR has no inventory counterpart by
+construction --- removals sit outside the GHG inventory --- which turns the
+CDR flags into a natural placebo and a natural greenwashing test rather than a
+treatment with a matched outcome.
+
+%======================================================================
+\section{Descriptive evidence}
+%======================================================================
+
+Table~\ref{tab:adopt} reports firm-year adoption rates. Two patterns matter
+for the regressions. First, the distribution is extremely skewed: energy
+efficiency appears in 73.6\% of firm-years while five Scope-3 categories
+(c2, c8, c10, c13, c14) appear in under 1\%, so those measures carry no
+estimable variation and should be pruned or pooled. The mean firm-year
+reports 4.2 distinct measures (median 4, p90 = 9). Second, adoption is
+strongly trending --- SBTi targets rise from 5.6\% (2016) to 27.5\% (2023),
+RECs from 11.9\% to 21.7\%, PPAs from 6.0\% to 13.7\%, engineered CDR from
+1.0\% to 5.1\% --- while energy efficiency is flat at $\approx$74\%. Any
+specification must therefore absorb year effects, and preferably
+sector$\times$year effects.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Firm-year adoption rates (\% of 8{,}090 firm-years), selected measures.}
+\label{tab:adopt}
+\begin{tabular}{@{}lr lr lr@{}}
+\toprule
+\multicolumn{2}{c}{\textbf{Tier 1}} & \multicolumn{2}{c}{\textbf{Tier 2 (top)}} & \multicolumn{2}{c}{\textbf{Tier 2 (thin) \& governance}} \\
+\cmidrule(r){1-2}\cmidrule(lr){3-4}\cmidrule(l){5-6}
+S1  & 78.9 & Energy efficiency        & 73.6 & Business travel (c6)    & 6.4 \\
+S2  & 64.4 & Supplier engagement (c1) & 39.1 & Internal carbon price   & 5.9 \\
+S3U & 58.2 & On-site renewables       & 38.0 & Downstream transport (c9) & 4.7 \\
+CDR & 26.7 & Waste / circularity (c5) & 30.3 & Engineered CDR          & 3.1 \\
+S3D & 24.9 & Renewable elec.\ (generic) & 28.0 & Investments (c15)     & 2.6 \\
+    &      & Packaging                & 25.3 & Fuel \& energy (c3)     & 1.1 \\
+    &      & Material substitution (c1) & 21.8 & Capital goods (c2)    & 0.5 \\
+    &      & Third-party assurance    & 36.9 & Downstream leased (c13) & 0.4 \\
+    &      & SBTi target              & 19.1 & Franchises (c14)        & 0.4 \\
+    &      & Exec.\ pay linked        & 17.1 & Upstream leased (c8)    & 0.4 \\
+    &      & Fuel switching           & 18.2 & Processing (c10)        & 0.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A third descriptive result is a finding in its own right: the
+\emph{unpinpointed share} --- chunks where Tier~1 fires but no Tier-2 measure
+does --- is 23.7\% for S1, 15.0\% for S3U, 16.5\% for CDR, but 41.1\% for S3D
+and 54.4\% for S2. Over half of all Scope-2 talk names no instrument at all.
+That is a direct, quantified measure of how much corporate climate disclosure
+is scope-level assertion rather than identifiable action, and it is also why
+the generic \code{renewable\_electricity\_general} category had to exist.
+
+%======================================================================
+\section{Empirical design (current stage)}
+%======================================================================
+
+\paragraph{Specification 1 --- firm-level baseline.} For firm $i$ in sector
+$s$ and year $t$,
+\begin{equation}
+\Delta \ln E_{it} \;=\; \sum_{m=1}^{M}\beta_m D_{i,m,t-1}
+\;+\; \gamma' X_{it} \;+\; \alpha_i \;+\; \delta_{st} \;+\; \varepsilon_{it},
+\end{equation}
+where $E_{it}$ is Scope~1$+$2 absolute emissions (log intensity, deflated by
+Trucost revenue, as the alternative outcome), $D_{i,m,t-1}$ are the lagged
+adoption indicators, $\alpha_i$ are firm fixed effects, and $\delta_{st}$ are
+sector$\times$year effects. $X_{it}$ must include \emph{disclosure volume} ---
+the number of retained chunks and the Trucost weighted-disclosure score ---
+because a firm that simply writes a longer report mechanically trips more
+flags. Without that control, $\beta_m$ confounds doing with talking. Standard
+errors are two-way clustered by firm and year.
+
+\paragraph{Specification 2 --- matched category panel (the identifying design).}
+Stack the data at the firm$\times$category$\times$year level using
+Table~\ref{tab:map}, where $k$ indexes an emission category and $D^{\text{match}}_{ikt}$
+equals one if the firm adopted a measure targeting category $k$:
+\begin{equation}
+\Delta \ln E_{ikt} \;=\; \beta\, D^{\text{match}}_{i,k,t-1}
+\;+\; \alpha_{it} \;+\; \gamma_{kt} \;+\; \varepsilon_{ikt}.
+\end{equation}
+The firm$\times$year fixed effect $\alpha_{it}$ absorbs \emph{every}
+firm-level confounder in that year: output growth, M\&A, sector shocks,
+disclosure propensity, general greenwashing taste, even the firm's overall
+climate ambition. Identification comes purely from the contrast between the
+categories a firm targeted and the categories it did not, within the same
+report. Interacting $D^{\text{match}}$ with category dummies recovers a
+measure-specific $\beta_k$ under the same fixed-effect structure, which is
+precisely the ``which action works for which emission type'' question.
+The design also generates its own falsification test: the coefficient on
+$D_{i,k',t-1}$ for a \emph{non}-matched category $k' \neq k$ should be zero,
+and the CDR measures --- which have no inventory counterpart --- should move
+nothing.
+
+\paragraph{Specification 3 --- dynamics and staggered adoption.} Because
+adoption is staggered and trending, a static two-way fixed-effects estimator
+is contaminated by already-treated comparisons. Estimate an event study around
+each firm's \emph{first} adoption of measure $m$, $\tau \in [-3,+5]$, using
+not-yet-treated firms as controls and a heterogeneity-robust estimator
+(Callaway--Sant'Anna or Sun--Abraham). Pre-trends are the key diagnostic here:
+firms plausibly announce measures \emph{after} emissions have already begun to
+fall, which is exactly the anticipation problem the event study is meant to
+expose.
+
+\paragraph{Sample discipline.} Trucost \emph{models} emissions from
+revenue $\times$ sector intensity when a firm does not disclose. On modelled
+observations, emissions are a mechanical function of revenue and cannot
+respond to a firm's abatement measures --- so including them attenuates every
+$\beta$ toward zero. The primary sample must therefore be restricted to
+as-reported observations using the \code{*\_As Reported} variables and the
+per-scope GHG disclosure scores (\code{di\_387688}--\code{di\_387726}), with
+the modelled observations used as an explicit placebo: an effect that also
+appears in the modelled subsample is a spurious revenue artefact.
+
+%======================================================================
+\section{Next stage: firm characteristics, composition, and efficacy}
+%======================================================================
+
+The natural next question is not just \emph{which} measures work but
+\emph{for whom}, and through what channel. Let $Z_{it}$ collect firm
+characteristics: size (log assets), Tobin's $q$, leverage, ROA, cash holdings,
+capex and R\&D intensity, asset tangibility, firm age, institutional ownership
+and its concentration, index membership, analyst coverage, financial
+constraints (SA/WW indices), product-market competition, foreign sales share,
+baseline emission intensity relative to sector, and policy exposure (state RPS
+stringency, regulated utility status, carbon-price jurisdiction share).
+
+\paragraph{(a) Moderated effects.} Interact characteristics with measures
+inside Specification 2:
+\begin{equation}
+\Delta \ln E_{ikt} = \big(\beta + \lambda' Z_{i,t-1}\big) D^{\text{match}}_{i,k,t-1}
++ \alpha_{it} + \gamma_{kt} + \varepsilon_{ikt},
+\end{equation}
+where the level effect of $Z$ is absorbed by $\alpha_{it}$ --- a real
+advantage, since it means $\lambda$ is identified off differential
+\emph{effectiveness} rather than off any correlation between firm type and
+emission growth.
+
+\paragraph{(b) Composition versus efficacy.} A characteristic can raise
+realised abatement in two distinct ways: by shifting firms toward measures
+that work (composition), or by making the same measure more effective
+(efficacy). A Oaxaca--Blinder-style decomposition of the gap between firm
+types $z_1$ and $z_0$ separates them:
+\begin{equation}
+\underbrace{\textstyle\sum_m \bar{\beta}_m \big[p_m(z_1)-p_m(z_0)\big]}_{\text{composition: chooses better actions}}
+\;+\;
+\underbrace{\textstyle\sum_m \bar{p}_m \big[\beta_m(z_1)-\beta_m(z_0)\big]}_{\text{efficacy: executes actions better}},
+\end{equation}
+with $p_m(z)$ estimated from a first-stage adoption model (a multivariate
+probit or LPM of $D_m$ on $Z$, which is independently interesting: it is the
+selection equation describing \emph{who does what}). The finance interpretation
+is sharp --- if slack-rich, low-constraint firms decarbonise mainly through
+composition, capital availability buys \emph{options}; if through efficacy, it
+buys \emph{execution}.
+
+\paragraph{(c) Governance as a moderator, not a treatment.} The four
+governance flags are best read here as candidate moderators. Does an internal
+carbon price make efficiency investment more effective, or merely more
+frequent? Does emission-linked executive pay raise $\beta$, or does it raise
+adoption of cheap, visible measures (offsets, RECs) without moving the
+inventory? Third-party assurance is doubly useful: it is both a plausible
+moderator and a proxy for data quality, so it can enter as a sample split.
+
+\paragraph{(d) Flexible heterogeneity.} With $\approx$30 treatments and
+$\approx$20 characteristics, the interaction space is too large to explore by
+hand without inviting specification search. A causal-forest / generic-ML
+approach (Chernozhukov--Demirer--Duflo--Fern\'andez-Val: GATES and CLAN)
+delivers pre-registered, sample-split heterogeneity estimates --- discipline
+that will matter to referees given how many interactions are available.
+
+%======================================================================
+\section{Threats to validity}
+%======================================================================
+
+\textbf{Measurement error in an LLM-generated regressor} is the first-order
+concern. Classical error in a binary regressor attenuates $\beta$; correlated
+error (a model systematically over-firing on firms with glossier reports) does
+worse. Mitigation: a hand-coded validation sample with per-measure precision
+and recall, repeated extraction under different models and seeds to bound
+instability, and where feasible the recent econometrics for regressors
+generated by machine learning. \textbf{Report--fiscal-year alignment}: a
+report filed in year $t$ typically describes fiscal year $t-1$, so the lag
+structure must be verified against \code{periodenddate} rather than assumed.
+\textbf{The 50-chunk cap} censors long reports, so adoption is measured with
+more noise for the most disclosure-heavy firms --- estimate a robustness
+sample without the cap. \textbf{Selection into disclosure} is the deepest
+issue: firms choose to publish a report, choose what to say, and choose
+whether to report emissions to Trucost. Specification 2 defends against the
+firm-level component of this but not against the possibility that firms
+selectively disclose measures for the categories where they already expect
+improvement --- which is precisely what the event-study pre-trends are for.
+
+%======================================================================
+\section{Future directions}
+%======================================================================
+
+\textbf{1. From binary to dosage.} The current flags record whether a measure
+was mentioned as an action, not how large it was. A second extraction pass can
+pull quantities --- MW of contracted PPA capacity, dollars of abatement capex,
+percentage targets, share of renewable electricity --- turning $D_m$ into a
+continuous treatment and greatly sharpening the effect estimates.
+
+\textbf{2. The say--do gap as an asset-pricing object.} Firms whose measure
+adoption predicts \emph{no} subsequent emission response are, operationally,
+the definition of cheap talk. A firm-level ``say--do gap'' index --- predicted
+minus realised abatement --- can be validated against known greenwashing
+events and then priced: do high-gap firms earn lower returns, face higher
+credit spreads, or suffer larger drawdowns on climate-news days? This turns a
+measurement project into a finance paper.
+
+\textbf{3. Sharper identification.} Candidate shocks include state RPS
+tightenings, the SEC climate-disclosure rule and California SB 253/261, the EU
+CBAM for exporters, and utility-level fuel-price shocks. Each provides
+plausibly exogenous variation in the \emph{cost} of a specific measure family,
+supporting instrumented or difference-in-differences estimates of measure
+effectiveness rather than the conditional-correlation reading of
+Specification~1.
+
+\textbf{4. Supply-chain spillovers.} Supplier engagement (c1) is the most
+common Scope-3 measure. Its effect should appear not only in the focal firm's
+Scope~3 but in \emph{suppliers'} Scope~1. Linking the panel to a supply-chain
+network (FactSet Revere or Compustat customer segments) tests whether
+value-chain pressure propagates, and whether it merely relocates emissions
+outside the reporting boundary.
+
+\textbf{5. Offsets versus abatement.} Because CDR has no inventory
+counterpart, firms leaning on offsets should show adoption without inventory
+response. Comparing offset-heavy against measure-heavy decarbonisers speaks
+directly to the SBTi's insistence that removals cannot substitute for
+reduction.
+
+\textbf{6. Open-vocabulary discovery.} The unpinpointed residual (up to 54\%
+of Scope-2 passages) is where the fixed taxonomy fails. Embedding-clustering
+that residual text would surface measure types the standards do not enumerate,
+allowing the taxonomy to be extended empirically rather than only deductively.
+
+\textbf{7. Scope extension.} The pipeline is universe-agnostic and costs
+\$0.05 per company. Extending beyond the US --- where the EU's CSRD now
+mandates comparable disclosure --- would allow a regulatory-regime comparison:
+does mandated disclosure change what firms do, or only what they write?
+
+\vspace{1em}
+\begin{center}
+\rule{0.4\textwidth}{0.4pt}
+\end{center}
+\small
+\noindent\textbf{Data and code.} Extraction pipeline: \code{carbontax}
+(Python, editable install; four stages driven by \code{config/run.yaml}).
+Reports: S\&P Capital IQ ESG filings. Emissions: S\&P Global Trucost
+Environmental via WRDS (\code{trucost\_environ}). Financials: Compustat
+North America. Standards: GHG Protocol Corporate Standard (2004), Scope~2
+Guidance (2015), Corporate Value Chain (Scope~3) Standard (2011); IPCC AR6
+WGIII (2022); EU Taxonomy Regulation 2020/852; SBTi Corporate Net-Zero
+Standard v1.3 (2025).
+
+\end{document}

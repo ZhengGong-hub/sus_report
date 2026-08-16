@@ -72,3 +72,13 @@ def parsed_csv(run_name: str, preview: bool = False) -> str:  # analysis-ready f
 def report_xlsx(run_name: str, preview: bool = False) -> str:  # review workbook (written by report)
     suffix = "__preview" if preview else ""
     return os.path.join(run_dir(run_name), f"report{suffix}.xlsx")
+
+
+# stage 5 keeps its own subfolder: regression output accumulates across specs rather
+# than overwriting one canonical artifact the way report.xlsx does
+def regression_dir(run_name: str) -> str:
+    return os.path.join(run_dir(run_name), "regression")
+
+
+def panel_parquet(run_name: str) -> str:  # one row per company-year (written by build_panel)
+    return os.path.join(regression_dir(run_name), "panel.parquet")

@@ -17,7 +17,7 @@ data:
 
 # ── Stage 1: acquire_pdfs — download PDFs from S&P CIQ ────────────────────────
 acquire_pdfs:
-  start_date: "2015-01-01"
+  start_date: "2000-01-01"
   end_date: "2025-01-01"
   resume_from: 0          # skip the first N intermed batch folders
   init_folders: false     # true = (re)create intermed batch folders from company_csv, then stop
@@ -25,9 +25,9 @@ acquire_pdfs:
 # ── Stage 2: prepare_batch_input — PDFs → chunks → batch JSONL (local only) ───
 prepare_batch_input:
   identifier: trucost_companyid   # "fileid" or "companyid"; empty/omitted companyid list = all companyids or "trucost_companyid"
-  model: gpt-5.4-nano         # stamped into the ref parquet and every batch request
+  model: gpt-5.4-nano       # stamped into the ref parquet and every batch request
   temperature: 0         # request temperature; null = omit (gpt-5-mini rejects any non-default value)
-  max_chunks_per_file: 50     # cap per filing; null = no cap
+  max_chunks_per_file: null     # cap per filing; null = no cap
   chunk_selection: random     # head | random — how to pick when a filing exceeds max_chunks_per_file
   chunk_sample_seed: 42       # RNG seed for chunk_selection: random (reproducible draw)
   input_price_per_1m_usd: 0.375  # $/1M input tokens (batch-discounted rate); used for the batch cost estimate
@@ -64,3 +64,19 @@ openai_batch:
 # No tunable settings: reads  batch_folder/<run_name>/parsed_aggregated_batch_output.csv,
 #                      writes batch_folder/<run_name>/report.xlsx.
 analysis: {}
+
+# ── Stage 5: regression — chunk flags → company-year panel → regressions ──────
+regression:
+  panel:
+    # mapping fileType to keep. One genre only: a company-year otherwise mixes a
+    # Sustainability Report with CSR/Environmental/TCFD documents (29.7% of cells),
+    # which multiplies that firm-year's sampling exposure.
+    file_type: Sustainability Report
+    # which date puts a filing in a year: periodDate = period the report covers,
+    # filingDate = when it was published. They differ for 16% of filings.
+    year_from: periodDate
+    # backward-looking pooling windows in years, inclusive of the anchor year: 1 = that
+    # year's report alone, 3 = the anchor year plus the two before it. One panel row per
+    # (company, year, window); wider windows trade measurement noise for less within-firm
+    # switching, so keep 1 alongside them as the comparison.
+    windows: [1, 3, 5]
