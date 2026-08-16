@@ -80,3 +80,18 @@ regression:
     # (company, year, window); wider windows trade measurement noise for less within-firm
     # switching, so keep 1 alongside them as the comparison.
     windows: [1, 3, 5]
+    # which Trucost date the outcome merge joins on. fiscalyear is Trucost's own period
+    # assignment and is right for non-December year ends (a period ending 2021-01-01 is
+    # FY2020); periodenddate takes the calendar year of the period end, which misdates
+    # those 250 rows and collapses two adjacent fiscal years into one cell.
+    trucost_year_from: fiscalyear
+    # a Trucost outcome counts as the firm's own number (<scope>_disclosed = true) when its
+    # score is <= this. Score scale, undocumented by WRDS and read off the score × disclosure-
+    # text crosstab:
+    #   1.0 / 2.0  the firm's disclosure (CDP, CSR/environmental report, annual report)
+    #   2.4        partial disclosure, or extrapolated from the prior year
+    #   3.0        Trucost model from physical intensity factors (S3 downstream only)
+    #   4.0        Trucost model from revenue intensity factors, or disclosure rejected
+    # 2.4 keeps extrapolated-from-prior-year; 2.0 is the strict cut. The raw score columns
+    # stay in the panel either way, so this only names the default rule.
+    disclosed_max_score: 2.4

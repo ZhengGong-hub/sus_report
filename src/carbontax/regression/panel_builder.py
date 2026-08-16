@@ -8,6 +8,7 @@ import os
 import pandas as pd
 
 from carbontax.paths import panel_parquet, parsed_csv
+from carbontax.regression.outcomes import OUTCOMES, add_disclosure_flags, load_trucost
 from carbontax.taxonomy import GOVERNANCE_FLAGS, MEASURE_IDS, TIER1_BUCKETS
 
 logger = logging.getLogger(__name__)
@@ -36,13 +37,19 @@ class PanelBuilder:
         self.file_type = section["file_type"]
         self.year_from = section["year_from"]
         self.windows = section["windows"]
+        self.trucost_year_from = section["trucost_year_from"]
+        self.disclosed_max_score = section["disclosed_max_score"]
         self.mapping_csv = data["output"]["mapping_csv"]
+        self.trucost_csv = data["input"]["trucost_csv"]
 
         if self.year_from not in ("periodDate", "filingDate"):
             raise ValueError(f"regression.panel.year_from must be periodDate or filingDate, got {self.year_from!r}")
         if not self.windows or any(w < 1 for w in self.windows):
             raise ValueError(f"regression.panel.windows must be positive year counts, got {self.windows!r}")
-        for path in (parsed_csv(self.run_name), self.mapping_csv):
+        if not 1.0 <= self.disclosed_max_score < 4.0:
+            raise ValueError("regression.panel.disclosed_max_score must sit on the Trucost score scale "
+                             f"[1.0, 4.0) — 4.0 would count Trucost's own model as firm data; got {self.disclosed_max_score!r}")
+        for path in (parsed_csv(self.run_name), self.mapping_csv, self.trucost_csv):
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Panel input not found: {path}")
 
@@ -64,7 +71,26 @@ class PanelBuilder:
                     len(df), df.filingId.nunique(), df.companyid.nunique())
 
         # long panel: the same company-year cells repeated once per pooling window
-        return pd.concat([self._window_panel(df, w) for w in self.windows], ignore_index=True)
+        panel = pd.concat([self._window_panel(df, w) for w in self.windows], ignore_index=True)
+        return self._merge_outcomes(panel)
+
+    def _merge_outcomes(self, panel: pd.DataFrame) -> pd.DataFrame:
+        # every di_* item comes along, not just the y candidates: the regression stage
+        # picks its outcome from OUTCOMES, but controls and robustness rows may want others
+        tc = load_trucost(self.trucost_csv, self.trucost_year_from)
+        merged = panel.merge(tc, on=["companyid", "year"], how="left")
+        if len(merged) != len(panel):
+            raise ValueError(f"Outcome merge changed the row count ({len(panel)} → {len(merged)}); "
+                             "the Trucost frame is not unique on companyid-year")
+
+        merged = add_disclosure_flags(merged, self.disclosed_max_score)
+        logger.info("Outcome quality: score <= %s counts as the firm's own number", self.disclosed_max_score)
+        for scope, cols in OUTCOMES.items():
+            have = merged[cols["intensity"]].notna()
+            disclosed = merged.loc[have, f"{scope}_disclosed"].mean()  # share OF THOSE, not of all cells
+            logger.info("  %-4s %s: %5.1f%% of cells have an outcome, %4.1f%% of those are the firm's own number",
+                        scope, cols["intensity"], 100 * have.mean(), 100 * disclosed)
+        return merged
 
     @staticmethod
     def _anchors(df: pd.DataFrame) -> pd.DataFrame:
