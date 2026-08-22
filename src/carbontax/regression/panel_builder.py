@@ -7,7 +7,7 @@ import os
 
 import pandas as pd
 
-from carbontax.paths import panel_parquet, parsed_csv
+from carbontax.paths import panel_csv, parsed_csv
 from carbontax.regression.outcomes import OUTCOMES, add_disclosure_flags, load_trucost
 from carbontax.taxonomy import GOVERNANCE_FLAGS, MEASURE_IDS, TIER1_BUCKETS
 
@@ -55,9 +55,9 @@ class PanelBuilder:
 
     def run(self) -> pd.DataFrame:
         panel = self.build()
-        dest = panel_parquet(self.run_name)
+        dest = panel_csv(self.run_name)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        panel.to_parquet(dest, index=False)
+        panel.to_csv(dest, index=False)
         logger.info("Wrote %d rows across windows %s → %s", len(panel), self.windows, dest)
         return panel
 

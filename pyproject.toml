@@ -38,6 +38,7 @@ carbontax-status   = "carbontax.openai_batch.check_status:main"
 carbontax-download-and-parse = "carbontax.openai_batch.download_and_parse_batch:main"
 carbontax-report   = "carbontax.analysis.report:main"
 carbontax-panel    = "carbontax.regression.build_panel:main"
+carbontax-regress  = "carbontax.regression.run_regressions:main"
 
 [tool.black]
 line-length = 88

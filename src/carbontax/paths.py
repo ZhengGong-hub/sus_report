@@ -80,5 +80,13 @@ def regression_dir(run_name: str) -> str:
     return os.path.join(run_dir(run_name), "regression")
 
 
-def panel_parquet(run_name: str) -> str:  # one row per company-year (written by build_panel)
-    return os.path.join(regression_dir(run_name), "panel.parquet")
+def panel_csv(run_name: str) -> str:  # one row per company-year (written by build_panel)
+    return os.path.join(regression_dir(run_name), "panel.csv")
+
+
+def regression_results_csv(run_name: str) -> str:  # tidy: one row per spec × term
+    return os.path.join(regression_dir(run_name), "results.csv")
+
+
+def regression_summary_md(run_name: str) -> str:  # headline specs, human-readable
+    return os.path.join(regression_dir(run_name), "summary.md")

@@ -35,6 +35,10 @@ OUTCOMES: dict[str, dict[str, str]] = {
             "score": "ghg_scope_3_downstream_total_score"},
 }
 
+# which taxonomy scope supplies the natural regressors for each outcome: a Scope 1 outcome
+# is matched with the Scope 1 measures, and both Scope 2 outcomes with the Scope 2 measures
+OUTCOME_TAXONOMY_SCOPE: dict[str, str] = {"S1": "S1", "S2L": "S2", "S2M": "S2", "S3U": "S3U", "S3D": "S3D"}
+
 # Score → did this number come from the firm, or did Trucost supply it?
 #   1.0, 2.0  the firm's own disclosure (CDP, CSR/environmental report, annual report)
 #   2.4       partial disclosure or extrapolated from the prior year — still firm-anchored

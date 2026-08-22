@@ -95,3 +95,27 @@ regression:
     # 2.4 keeps extrapolated-from-prior-year; 2.0 is the strict cut. The raw score columns
     # stay in the panel either way, so this only names the default rule.
     disclosed_max_score: 2.4
+
+  # ── stage 5b: the regression grid ───────────────────────────────────────────
+  # every combination below is estimated as: ln(y) ~ flags + controls + firm FE + year FE.
+  # Results land in regression/results.csv (one row per spec × term); the first entry of
+  # each list defines the headline spec written to regression/summary.md.
+  specs:
+    # S2M (market-based) is the primary Scope 2 outcome: it is the one contracted renewables
+    # can actually move, and it is 99.9% firm-disclosed. S2L (location-based) is kept as the
+    # placebo — a PPA cannot shift it by construction, so a null there is the correct result.
+    # S3U is included but expect nothing: 89% of it is Trucost's revenue model.
+    scopes: [S1, S2M, S2L, S3U, S3D]
+    # intensity = tCO2e per $M revenue; absolute = tCO2e, which adds ln(revenue) as a
+    # control instead of forcing its coefficient to -1 the way a ratio outcome does
+    outcome_forms: [intensity, absolute]
+    windows: [1, 3]
+    regressor_forms: [any, share]        # the dummy, or the share of chunks carrying the flag
+    # tier1_* pool a whole scope into one dummy, which is noisier to fire but far less
+    # sensitive to whether one specific measure happened to land in a sampled chunk
+    regressor_sets: [scope_matched, scope_matched_plus_gov, tier1, tier1_matched]
+    lags: [0]                            # contemporaneous only; add 1, 2 to lag the actions
+    disclosed_only: [true, false]        # true = drop cells whose y is a Trucost model
+    controls: [log_n_chunks, n_years]    # sampling exposure, and window history depth
+    min_switchers: 30                    # drop a flag identified off fewer firms than this
+    cluster: companyid
