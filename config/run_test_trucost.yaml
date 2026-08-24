@@ -79,7 +79,7 @@ regression:
     # year's report alone, 3 = the anchor year plus the two before it. One panel row per
     # (company, year, window); wider windows trade measurement noise for less within-firm
     # switching, so keep 1 alongside them as the comparison.
-    windows: [1, 3, 5]
+    windows: [1, 2, 3]
     # which Trucost date the outcome merge joins on. fiscalyear is Trucost's own period
     # assignment and is right for non-December year ends (a period ending 2021-01-01 is
     # FY2020); periodenddate takes the calendar year of the period end, which misdates
@@ -94,7 +94,25 @@ regression:
     #   4.0        Trucost model from revenue intensity factors, or disclosure rejected
     # 2.4 keeps extrapolated-from-prior-year; 2.0 is the strict cut. The raw score columns
     # stay in the panel either way, so this only names the default rule.
+    # NOTE (2026-08-23, supervisor): the headline now runs on all data, so this no longer
+    # restricts the sample — it only writes the <scope>_disclosed labels, and the sample cut
+    # is made by regression.specs.disclosed_only below. Left at 2.4 on purpose: the label has
+    # to keep meaning "the firm's own number" for the disclosed_only=true robustness spec, and
+    # raising it toward 4.0 would just rename Trucost's own model as disclosure.
     disclosed_max_score: 2.4
+
+    # denominator for every <flag>_share (the _any dummies are unaffected):
+    #   all_chunks     — every chunk the report split into, keyword-matched or not
+    #   keyword_chunks — only the chunks sent to the LLM (the original behaviour)
+    # keyword_chunks is endogenous to the treatment: prepare_batch_input.filter_keywords
+    # contains "renewable", "solar", "wind power", "energy efficiency", so a firm doing more
+    # of those matches more chunks, inflating its own denominator and deflating every _share.
+    # Measured on this run: a firm-year where tier1_S2_any fires has 2.6x the kept chunks, and
+    # +0.38 log points even within firm. Keyword retention is 38% on average but ranges 8-87%
+    # across filings, so this is a reweighting, not a rescaling that firm FE would absorb.
+    # Note all_chunks counts chunks from pages that cleared min_page_tokens — all chunks, not
+    # all text — and needs n_chunks_total in the stage-2 ref parquet (re-run chunking if absent).
+    share_denominator: all_chunks
 
   # ── stage 5b: the regression grid ───────────────────────────────────────────
   # every combination below is estimated as: ln(y) ~ flags + controls + firm FE + year FE.
@@ -104,7 +122,8 @@ regression:
     # S2M (market-based) is the primary Scope 2 outcome: it is the one contracted renewables
     # can actually move, and it is 99.9% firm-disclosed. S2L (location-based) is kept as the
     # placebo — a PPA cannot shift it by construction, so a null there is the correct result.
-    # S3U is included but expect nothing: 89% of it is Trucost's revenue model.
+    # S3U is included but expect nothing: 89% of it is Trucost's revenue model — and with
+    # disclosed_only=false leading, those modelled cells are now inside the headline sample.
     scopes: [S1, S2M, S2L, S3U, S3D]
     # intensity = tCO2e per $M revenue; absolute = tCO2e, which adds ln(revenue) as a
     # control instead of forcing its coefficient to -1 the way a ratio outcome does
@@ -115,7 +134,13 @@ regression:
     # sensitive to whether one specific measure happened to land in a sampled chunk
     regressor_sets: [scope_matched, scope_matched_plus_gov, tier1, tier1_matched]
     lags: [0]                            # contemporaneous only; add 1, 2 to lag the actions
-    disclosed_only: [true, false]        # true = drop cells whose y is a Trucost model
+    # true = drop cells whose y is a Trucost model (score > panel.disclosed_max_score).
+    # NOTE (2026-08-23, supervisor): allow all data — false leads the list, so the headline
+    # spec in summary.md is now estimated on every company-year with a positive outcome,
+    # modelled or disclosed. true stays second so the firm-disclosed-only version is still
+    # estimated and lands in results.csv as the robustness check; flip the order back to
+    # [true, false] to make that one the headline again.
+    disclosed_only: [false, true]
     controls: [log_n_chunks, n_years]    # sampling exposure, and window history depth
     min_switchers: 30                    # drop a flag identified off fewer firms than this
     cluster: companyid

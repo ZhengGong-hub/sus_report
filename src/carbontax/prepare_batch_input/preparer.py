@@ -452,10 +452,17 @@ def _chunk_one_filing_impl(fileid: str, parser: PDFParser, splitter: RecursiveTe
             filtered = filtered.sample(n=max_chunks, random_state=chunk_sample_seed).sort_index()
         logger.info("Capped to %d chunks (%s) for fileid=%s", max_chunks, chunk_selection, fileid)
 
+    # n_chunks_total = the split count BEFORE the keyword filter, carried on every kept row so
+    # it survives into the ref parquet. The panel's <flag>_share can then divide by the whole
+    # report rather than by the keyword-matched subset, whose size grows with the measures
+    # themselves (filter_keywords contains "renewable", "solar", "energy efficiency"...).
+    # Pages under min_page_tokens are already gone, so this is all chunks, not all text; and a
+    # non-null max_chunks cap would leave it counting chunks nobody read.
     return pd.DataFrame({
         "filingId": int(fileid),
         "chunks": filtered["chunk"].tolist(),
         "chunk_ids": filtered["chunk_id"].tolist(),
+        "n_chunks_total": len(chunks_df),
         "prompt_version": PROMPT_VERSION,
         "model": model,
     })

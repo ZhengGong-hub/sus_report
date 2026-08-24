@@ -6,8 +6,9 @@ import logging
 import os
 
 import pandas as pd
+import pyarrow.parquet as pq
 
-from carbontax.paths import panel_csv, parsed_csv
+from carbontax.paths import combined_ref, panel_csv, parsed_csv
 from carbontax.regression.outcomes import OUTCOMES, add_disclosure_flags, load_trucost
 from carbontax.taxonomy import GOVERNANCE_FLAGS, MEASURE_IDS, TIER1_BUCKETS
 
@@ -39,6 +40,7 @@ class PanelBuilder:
         self.windows = section["windows"]
         self.trucost_year_from = section["trucost_year_from"]
         self.disclosed_max_score = section["disclosed_max_score"]
+        self.share_denominator = section["share_denominator"]
         self.mapping_csv = data["output"]["mapping_csv"]
         self.trucost_csv = data["input"]["trucost_csv"]
 
@@ -49,9 +51,18 @@ class PanelBuilder:
         if not 1.0 <= self.disclosed_max_score < 4.0:
             raise ValueError("regression.panel.disclosed_max_score must sit on the Trucost score scale "
                              f"[1.0, 4.0) — 4.0 would count Trucost's own model as firm data; got {self.disclosed_max_score!r}")
-        for path in (parsed_csv(self.run_name), self.mapping_csv, self.trucost_csv):
+        if self.share_denominator not in ("all_chunks", "keyword_chunks"):
+            raise ValueError("regression.panel.share_denominator must be all_chunks or keyword_chunks, "
+                             f"got {self.share_denominator!r}")
+        for path in (parsed_csv(self.run_name), self.mapping_csv, self.trucost_csv, combined_ref(self.run_name)):
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Panel input not found: {path}")
+        # n_chunks_total is written by stage 2; a ref parquet predating that change lacks the
+        # column and every _share would come out NaN. Schema only — the file is ~230MB.
+        ref_cols = pq.read_schema(combined_ref(self.run_name)).names
+        if "n_chunks_total" not in ref_cols:
+            raise KeyError(f"{combined_ref(self.run_name)} has no n_chunks_total column — re-run "
+                           "stage 2 chunking (BatchInputPreparer.chunk_filings) to record it")
 
     def run(self) -> pd.DataFrame:
         panel = self.build()
@@ -69,6 +80,15 @@ class PanelBuilder:
         df = chunks.merge(filings, on="filingId", how="inner")
         logger.info("Kept %d chunks across %d filings, %d companies",
                     len(df), df.filingId.nunique(), df.companyid.nunique())
+
+        # every surviving filing has chunks, so it must appear in the ref parquet. If it does
+        # not, its total is NaN and _filing_level's sum would quietly return a short denominator
+        # for the whole cell rather than failing.
+        orphans = df.loc[df.n_chunks_total.isna(), "filingId"].unique()
+        if len(orphans):
+            raise ValueError(f"{len(orphans)} filings have chunks but no n_chunks_total in "
+                             f"{combined_ref(self.run_name)} (e.g. {list(orphans[:5])}) — the ref "
+                             "parquet is stale relative to the parsed CSV; re-run stage 2 chunking")
 
         # long panel: the same company-year cells repeated once per pooling window
         panel = pd.concat([self._window_panel(df, w) for w in self.windows], ignore_index=True)
@@ -111,10 +131,12 @@ class PanelBuilder:
         pooled = pooled[(pooled.src_year <= pooled.year) & (pooled.src_year > pooled.year - window)]
 
         panel = pd.concat([self._filing_level(pooled), self._chunk_level(pooled)], axis=1)
+        panel = self._add_shares(panel)
         panel = panel.reset_index().sort_values(CELL, ignore_index=True)
         panel.insert(2, "window", window)
-        logger.info("window=%d: %d cells, median %d chunks pooled",
-                    window, len(panel), int(panel.n_chunks.median()))
+        logger.info("window=%d: %d cells, median %d chunks pooled (of %d split), _share over %s",
+                    window, len(panel), int(panel.n_chunks.median()),
+                    int(panel.n_chunks_total.median()), self.share_denominator)
         return panel
 
     def _load_filings(self) -> pd.DataFrame:
@@ -129,7 +151,16 @@ class PanelBuilder:
 
         mp["year"] = pd.to_datetime(mp[self.year_from]).dt.year
         logger.info("Mapping: %d %s filings", len(mp), self.file_type)
-        return mp[["filingId", "companyid", "year", "noOfPages"]]
+        return mp[["filingId", "companyid", "year", "noOfPages"]].merge(
+            self._load_chunk_totals(), on="filingId", how="left")
+
+    def _load_chunk_totals(self) -> pd.DataFrame:
+        # filingId → how many chunks the report split into before the keyword filter. Constant
+        # within a filing in the ref parquet, so first() is the value, not an aggregate.
+        ref = pd.read_parquet(combined_ref(self.run_name), columns=["filingId", "n_chunks_total"])
+        totals = ref.groupby("filingId", as_index=False).n_chunks_total.first()
+        totals["filingId"] = totals.filingId.astype("string")  # mapping keys filingId as string
+        return totals
 
     def _load_chunks(self) -> pd.DataFrame:
         path = parsed_csv(self.run_name)
@@ -147,11 +178,14 @@ class PanelBuilder:
         # noOfPages is a filing attribute, so it must be summed over filings — aggregating
         # it off the chunk frame would count each report once per chunk. Dedupe within the
         # cell, not globally: a window>1 cell legitimately reuses a filing across anchors.
-        fil = df[CELL + ["filingId", "src_year", "noOfPages"]].drop_duplicates(CELL + ["filingId"])
+        fil = df[CELL + ["filingId", "src_year", "noOfPages", "n_chunks_total"]].drop_duplicates(CELL + ["filingId"])
         fil = fil.assign(is_anchor=fil.src_year == fil.year)
         g = fil.groupby(CELL)
         return pd.DataFrame({
             "n_filings": g.filingId.size(),
+            # every chunk the window's reports split into, keyword-matched or not — the
+            # all_chunks denominator. Summed over filings for the same reason as total_pages.
+            "n_chunks_total": g.n_chunks_total.sum(min_count=1),
             # how much of the window the firm actually covered — 1 for window=1, and less
             # than the window whenever the firm skipped a year or sits at the panel's left edge
             "n_years": g.src_year.nunique(),
@@ -165,8 +199,29 @@ class PanelBuilder:
     def _chunk_level(df: pd.DataFrame) -> pd.DataFrame:
         g = df.groupby(CELL)
         counts = pd.DataFrame({"n_chunks": g.chunk_ids.size(), "chunk_tokens": g.prompt_tokens.sum()})
-        # _any = the dummy (measure appears anywhere in the firm-year), _share = fraction of
-        # chunks carrying it. Both are emitted so the spec choice happens at estimation time.
+        # _any = the dummy (measure appears anywhere in the firm-year). _flagged is the raw
+        # count of chunks carrying the measure; _add_shares turns it into _share once the
+        # denominator is known, since that lives on the filing-level frame.
         anys = g[FLAG_COLS].any().astype("int8").add_suffix("_any")
-        shares = g[FLAG_COLS].mean().astype("float32").add_suffix("_share")
-        return pd.concat([counts, anys, shares], axis=1)
+        flagged = g[FLAG_COLS].sum().astype("int32").add_suffix("_flagged")
+        return pd.concat([counts, anys, flagged], axis=1)
+
+    def _add_shares(self, panel: pd.DataFrame) -> pd.DataFrame:
+        """_flagged counts → _share, on whichever denominator the config names."""
+        # keyword_chunks divides by the chunks the LLM actually read. That denominator grows with
+        # the treatment — filter_keywords contains "renewable", "solar", "energy efficiency", so a
+        # firm doing more of those matches more chunks and every _share is deflated for exactly
+        # the firms doing the most. all_chunks divides by the whole report instead, which breaks
+        # that link. n_chunks (kept chunks) stays the exposure control either way: a flag can
+        # only fire in a chunk that was actually read.
+        denom = panel.n_chunks if self.share_denominator == "keyword_chunks" else panel.n_chunks_total
+        if denom.isna().any() or (denom <= 0).any():
+            raise ValueError(f"share_denominator={self.share_denominator} produced {denom.isna().sum()} "
+                             f"missing and {(denom <= 0).sum()} non-positive denominators")
+        if (panel.n_chunks > panel.n_chunks_total).any():
+            raise ValueError("some cells have more kept chunks than total chunks — the ref parquet "
+                             "and the parsed CSV disagree about which chunks exist")
+        flagged = panel[[f"{f}_flagged" for f in FLAG_COLS]]
+        shares = flagged.div(denom, axis=0).astype("float32")
+        shares.columns = [f"{f}_share" for f in FLAG_COLS]
+        return pd.concat([panel.drop(columns=list(flagged.columns)), shares], axis=1)
