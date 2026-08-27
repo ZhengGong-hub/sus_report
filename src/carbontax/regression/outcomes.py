@@ -57,7 +57,7 @@ META_COLS: list[str] = ["periodenddate", "fiscalyear", "gvkey", "ticker", "compa
 def load_trucost(csv_path: str, year_from: str) -> pd.DataFrame:
     """Trucost environment CSV → one row per companyid-year, all di_* data items kept."""
     if year_from not in ("fiscalyear", "periodenddate"):
-        raise ValueError(f"trucost_year_from must be fiscalyear or periodenddate, got {year_from!r}")
+        raise ValueError(f"load_trucost year_from must be fiscalyear or periodenddate, got {year_from!r}")
 
     tc = pd.read_csv(csv_path, dtype={"companyid": "string"}, low_memory=False)
     data_cols = [c for c in tc.columns if c.startswith("di_")]

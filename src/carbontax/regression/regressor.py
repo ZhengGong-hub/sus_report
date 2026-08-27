@@ -23,6 +23,9 @@ FE_COLS = ["companyid", "year"]  # firm FE + year FE
 CONTROL_BUILDERS = {
     "log_n_chunks": lambda d: np.log(d.n_chunks),
     "log_revenue": lambda d: np.log(d[TOTAL_REVENUE].where(d[TOTAL_REVENUE] > 0)),
+    # revenue in growth units, for the *_growth outcomes — same transform as the outcome
+    "log_revenue_growth": lambda d: (np.log(d[TOTAL_REVENUE].where(d[TOTAL_REVENUE] > 0))
+                                     - np.log(d[f"{TOTAL_REVENUE}_prev"].where(d[f"{TOTAL_REVENUE}_prev"] > 0))),
     "n_years": lambda d: d.n_years.astype(float),
     "n_filings": lambda d: d.n_filings.astype(float),
     "filed_this_year": lambda d: d.filed_this_year.astype(float),
@@ -77,9 +80,10 @@ class Regressor:
         for scope in self.scopes:
             if scope not in OUTCOMES:
                 raise ValueError(f"unknown scope {scope!r}; have {sorted(OUTCOMES)}")
+        legal_forms = ("intensity", "absolute", "intensity_growth", "absolute_growth")
         for form in self.outcome_forms:
-            if form not in ("intensity", "absolute"):
-                raise ValueError(f"outcome_forms must be intensity or absolute, got {form!r}")
+            if form not in legal_forms:
+                raise ValueError(f"outcome_forms must be one of {legal_forms}, got {form!r}")
 
     def run(self) -> pd.DataFrame:
         # CSV carries no dtypes: companyid is an all-digit id that would otherwise come back
@@ -105,15 +109,25 @@ class Regressor:
 
     def _estimate(self, panel: pd.DataFrame, spec: dict) -> list[dict]:
         cols = OUTCOMES[spec["scope"]]
-        y_col = cols[spec["outcome_form"]]
+        form = spec["outcome_form"]
+        growth = form.endswith("_growth")
+        y_col = cols[form[: -len("_growth")] if growth else form]
 
         d = panel[panel.window == spec["window"]].copy()
         if spec["disclosed"]:
             d = d[d[f"{spec['scope']}_disclosed"]]
         # logs need a strictly positive outcome; Trucost writes exact zeros for
         # not-applicable categories, which are absences rather than measurements
-        d = d[d[y_col] > 0]
-        d["_y"] = np.log(d[y_col])
+        if growth:
+            # ln(y_t / y_t-1). Both years must be positive, so a growth spec is a strictly
+            # smaller sample than the matching level spec — and a firm-year with no t-1 in
+            # Trucost drops out rather than borrowing a further-back year.
+            prev = f"{y_col}_prev"
+            d = d[(d[y_col] > 0) & (d[prev] > 0)]
+            d["_y"] = np.log(d[y_col]) - np.log(d[prev])
+        else:
+            d = d[d[y_col] > 0]
+            d["_y"] = np.log(d[y_col])
 
         flags = [f"{f}_{spec['regressor_form']}" for f in regressor_set(spec["regressor_set"], spec["scope"])]
         flags = [f for f in flags if f in d.columns]
@@ -123,9 +137,13 @@ class Regressor:
 
         controls = list(self.controls)
         # ln(intensity) already divides by revenue; with an absolute outcome the revenue
-        # term has to enter explicitly rather than being forced to a coefficient of -1
-        if spec["outcome_form"] == "absolute" and "log_revenue" not in controls:
+        # term has to enter explicitly rather than being forced to a coefficient of -1.
+        # A growth outcome needs the control in the same units, so revenue enters as its
+        # own log change rather than its level.
+        if form == "absolute" and "log_revenue" not in controls:
             controls = controls + ["log_revenue"]
+        elif form == "absolute_growth" and "log_revenue_growth" not in controls:
+            controls = controls + ["log_revenue_growth"]
         for c in controls:
             d[c] = CONTROL_BUILDERS[c](d)
 
