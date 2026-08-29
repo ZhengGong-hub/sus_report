@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carbon-measure disclosure and firm emissions: regression results</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body, h1, h2, h3, p, ol, ul, dl, dd, figure, table, caption { margin: 0; }
+  ol, ul { padding: 0; }
+  table { border-spacing: 0; }
+
+  :root {
+    --paper:      #F5F7F6;
+    --surface:    #FFFFFF;
+    --ink:        #101715;
+    --ink-soft:   #4A5754;
+    --ink-faint:  #788582;
+    --rule:       #DCE2E0;
+    --rule-soft:  #E9EDEB;
+    --accent:     #0E5257;
+    --accent-dim: #C9DCDA;
+    --flag:       #9A472C;
+    --flag-dim:   #F0DED6;
+    --shadow:     0 1px 2px rgba(16,23,21,.05), 0 8px 24px -16px rgba(16,23,21,.18);
+
+    --font-text: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --font-data: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+    --measure: 68ch;
+    --s1: .35rem; --s2: .7rem; --s3: 1.1rem; --s4: 1.8rem; --s5: 2.8rem; --s6: 4.4rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:      #0D1312;
+      --surface:    #141C1A;
+      --ink:        #E7EDEB;
+      --ink-soft:   #A3B0AD;
+      --ink-faint:  #74817E;
+      --rule:       #26312E;
+      --rule-soft:  #1C2523;
+      --accent:     #5FB8BC;
+      --accent-dim: #1D3B3C;
+      --flag:       #D08F70;
+      --flag-dim:   #35231B;
+      --shadow:     0 1px 2px rgba(0,0,0,.3), 0 8px 24px -16px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#0D1312; --surface:#141C1A; --ink:#E7EDEB; --ink-soft:#A3B0AD; --ink-faint:#74817E;
+    --rule:#26312E; --rule-soft:#1C2523; --accent:#5FB8BC; --accent-dim:#1D3B3C;
+    --flag:#D08F70; --flag-dim:#35231B;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -16px rgba(0,0,0,.6);
+  }
+  :root[data-theme="light"] {
+    --paper:#F5F7F6; --surface:#FFFFFF; --ink:#101715; --ink-soft:#4A5754; --ink-faint:#788582;
+    --rule:#DCE2E0; --rule-soft:#E9EDEB; --accent:#0E5257; --accent-dim:#C9DCDA;
+    --flag:#9A472C; --flag-dim:#F0DED6;
+    --shadow: 0 1px 2px rgba(16,23,21,.05), 0 8px 24px -16px rgba(16,23,21,.18);
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-text);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 78ch; margin: 0 auto; padding: var(--s6) var(--s4) var(--s6); }
+  p, li { max-width: var(--measure); }
+
+  /* ---- masthead ---- */
+  .masthead { border-bottom: 2px solid var(--ink); padding-bottom: var(--s3); margin-bottom: var(--s5); }
+  .eyebrow {
+    font-family: var(--font-data); font-size: .68rem; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: var(--s3);
+  }
+  h1 {
+    font-size: clamp(1.9rem, 4.6vw, 2.9rem); line-height: 1.12; font-weight: 600;
+    letter-spacing: -.015em; text-wrap: balance; margin-bottom: var(--s3);
+  }
+  .standfirst { font-size: 1.13rem; color: var(--ink-soft); max-width: 60ch; }
+  .runline {
+    font-family: var(--font-data); font-size: .72rem; color: var(--ink-faint);
+    margin-top: var(--s3); display: flex; flex-wrap: wrap; gap: var(--s3);
+  }
+
+  /* ---- sections ---- */
+  section { margin-top: var(--s6); }
+  h2 {
+    font-size: 1.42rem; font-weight: 600; letter-spacing: -.01em; text-wrap: balance;
+    padding-top: var(--s3); border-top: 1px solid var(--rule); margin-bottom: var(--s3);
+  }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: var(--s4) 0 var(--s2); }
+  p + p { margin-top: var(--s3); }
+  strong { font-weight: 600; }
+  code, .num { font-family: var(--font-data); font-size: .86em; font-variant-numeric: tabular-nums; }
+
+  /* ---- bottom line ---- */
+  .bottomline {
+    background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+    border-radius: 2px; padding: var(--s4); box-shadow: var(--shadow);
+  }
+  .bottomline h2 { border: 0; padding: 0; margin-bottom: var(--s3); font-size: 1.1rem; }
+  /* explicit counter: `display: grid` below takes the li out of `display: list-item`,
+     so the implicit list-item counter would never increment */
+  .bottomline ol { list-style: none; display: flex; flex-direction: column; gap: var(--s3); counter-reset: finding; }
+  .bottomline li { display: grid; grid-template-columns: 1.6rem 1fr; gap: var(--s2); counter-increment: finding; }
+  .bottomline li::before {
+    content: counter(finding); font-family: var(--font-data); font-size: .78rem;
+    color: var(--accent); padding-top: .3em;
+  }
+
+  /* ---- the paired test: the page's core device ---- */
+  .pair {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    border: 1px solid var(--rule); border-radius: 2px; overflow: hidden;
+    background: var(--surface); margin: var(--s4) 0 var(--s3);
+  }
+  .pane { padding: var(--s3) var(--s4); }
+  .pane + .pane { border-left: 1px solid var(--rule); }
+  .pane-label {
+    font-family: var(--font-data); font-size: .66rem; letter-spacing: .12em;
+    text-transform: uppercase; margin-bottom: var(--s2);
+  }
+  .pane-should .pane-label { color: var(--accent); }
+  .pane-cannot .pane-label { color: var(--flag); }
+  .pane-note { font-size: .9rem; color: var(--ink-soft); margin-top: var(--s2); }
+  .figure {
+    font-family: var(--font-data); font-variant-numeric: tabular-nums;
+    font-size: 1.65rem; line-height: 1.1; letter-spacing: -.02em;
+  }
+  .figure-sub { font-family: var(--font-data); font-size: .74rem; color: var(--ink-faint); margin-top: var(--s1); }
+
+  .verdict {
+    display: flex; gap: var(--s3); align-items: baseline;
+    border-left: 3px solid var(--accent); background: var(--accent-dim);
+    padding: var(--s3) var(--s4); border-radius: 2px; margin-bottom: var(--s3);
+  }
+  .verdict-tag {
+    font-family: var(--font-data); font-size: .64rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--accent); white-space: nowrap;
+  }
+  .caveat {
+    border: 1px solid var(--rule); border-left: 3px solid var(--flag);
+    background: var(--surface); padding: var(--s3) var(--s4);
+    border-radius: 2px; margin: var(--s3) 0; font-size: .95rem;
+  }
+  .caveat-tag {
+    font-family: var(--font-data); font-size: .64rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--flag); display: block; margin-bottom: var(--s1);
+  }
+  .verdict p { margin: 0; font-size: .95rem; }
+
+
+  .samp { font-family: var(--font-data); font-size: .74rem; color: var(--ink-faint); margin-bottom: var(--s2); }
+  .se { color: var(--ink-faint); font-size: .92em; }
+  tbody td { vertical-align: top; }
+
+
+  /* ---- the model block that opens each part ---- */
+  .formula {
+    background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--accent);
+    padding: var(--s3) var(--s4); border-radius: 2px; margin: var(--s3) 0 var(--s4);
+  }
+  .formula .eq {
+    font-family: var(--font-data); font-size: .88rem; line-height: 1.8; overflow-x: auto;
+    padding-bottom: var(--s3); margin-bottom: var(--s3); border-bottom: 1px solid var(--rule-soft);
+  }
+  .formula .eq b { color: var(--accent); font-weight: 600; }
+  .formula dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--s2) var(--s3); font-size: .9rem; }
+  .formula dt {
+    font-family: var(--font-data); font-size: .66rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--accent); padding-top: .3em;
+  }
+  .formula dd { color: var(--ink-soft); max-width: 60ch; }
+  .formula dd code { font-size: .82em; color: var(--ink); }
+  @media (max-width: 640px) { .formula dl { grid-template-columns: 1fr; gap: var(--s1); } }
+
+  /* ---- tables ---- */
+  .scroll { overflow-x: auto; margin: var(--s3) 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; }
+  caption {
+    text-align: left; font-family: var(--font-data); font-size: .68rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-faint); padding-bottom: var(--s2);
+  }
+  th, td { padding: .5rem .7rem; text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; white-space: normal; }
+  thead th {
+    font-family: var(--font-data); font-size: .68rem; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 400; border-bottom: 1px solid var(--ink);
+  }
+  tbody td { border-bottom: 1px solid var(--rule-soft); font-variant-numeric: tabular-nums; }
+  tbody td:not(:first-child) { font-family: var(--font-data); font-size: .84rem; }
+  tbody tr:last-child td { border-bottom: 1px solid var(--rule); }
+  .hit { color: var(--flag); font-weight: 600; }
+  .same { background: var(--accent-dim); border-radius: 2px; padding: .1em .35em; }
+
+  ul.plain { list-style: none; display: flex; flex-direction: column; gap: var(--s2); margin: var(--s3) 0; }
+  ul.plain li { padding-left: var(--s3); border-left: 1px solid var(--rule); }
+
+  .footnote {
+    margin-top: var(--s6); padding-top: var(--s3); border-top: 1px solid var(--rule);
+    font-size: .85rem; color: var(--ink-faint);
+  }
+  .footnote p { max-width: var(--measure); }
+  .footnote p + p { margin-top: var(--s2); }
+
+  @media (max-width: 640px) {
+    .wrap { padding: var(--s5) var(--s3); }
+    .pair { grid-template-columns: 1fr; }
+    .pane + .pane { border-left: 0; border-top: 1px solid var(--rule); }
+  }
+
+  @page { margin: 16mm 15mm 18mm; }
+  @media print {
+    :root, :root[data-theme="dark"], :root[data-theme="light"] {
+      --paper:#FFFFFF; --surface:#FFFFFF; --ink:#101715; --ink-soft:#3D4A47; --ink-faint:#6B7876;
+      --rule:#C8D0CE; --rule-soft:#DFE5E3; --accent:#0E5257; --accent-dim:#DCEAE8;
+      --flag:#8A3F26; --flag-dim:#F5E7E1; --shadow:none;
+    }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { background:#fff; font-size: 10pt; line-height: 1.45; }
+    .wrap { max-width: none; padding: 0; }
+    p, li { max-width: none; }
+    .caveat, ul.plain, .formula { break-inside: avoid; }
+    table { break-inside: auto; } tr { break-inside: avoid; }
+    h1, h2, h3 { break-after: avoid; }
+    section { margin-top: 1.5rem; }
+    .masthead { margin-bottom: 1.5rem; }
+    .scroll { overflow-x: visible; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Working note &middot; Regression results</div>
+    <h1>Carbon-measure disclosure and firm emissions: regression results</h1>
+    <p class="standfirst">Three specifications, differing only in how the disclosure measures are grouped on the right-hand side. Each is stated in full, then reported, then discussed.</p>
+    <div class="runline">
+      <span>1,647 companies</span><span>2011&ndash;2024</span><span>7 outcomes</span><span>48 regressions</span><span>run: test_trucost</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Common structure</h2>
+    <p>All three parts estimate the same equation and differ only in what enters as <b>x</b>. The outcome is always logged emissions, so a coefficient of <span class="num">+0.10</span> means roughly 10% higher emissions in years the measure is discussed.</p>
+    <p>Company fixed effects mean we never compare one firm with another &mdash; only a firm with itself across years. Year fixed effects remove whatever moved all firms together in a given year. Report length is controlled throughout, because a measure can only be recorded if it appears in text we sampled.</p>
+    <p>Every specification is run twice, once for each way of building the disclosure indicators:</p>
+    <ul class="plain">
+      <li><strong>1-year window</strong> &mdash; the indicator comes from that year&rsquo;s report alone.</li>
+      <li><strong>3-year window</strong> &mdash; pooled over the report year and the two before it. Indicators built this way are considerably more stable (year-to-year correlation 0.77, against 0.39 at one year), so this is the specification to read as primary.</li>
+    </ul>
+    <div class="caveat">
+      <span class="caveat-tag">On the standard errors</span>
+      <p>This run uses heteroskedasticity-robust standard errors that are <strong>not clustered by company</strong>. Since each firm is observed repeatedly, that is likely too generous. Clustering by firm leaves every coefficient unchanged but widens about 85% of the standard errors. The p-values below should be read as a lower bound; nothing about the estimates themselves changes.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Part 1 &mdash; Measures matched to the scope they act on</h2>
+    <p>The most focused specification. For each outcome, <b>x</b> holds only the measures that act on that emissions scope: on-site measures for Scope 1, electricity procurement for Scope 2, downstream measures for Scope 3 downstream. A measure is dropped when fewer than 30 firms change their disclosure of it, which is why Scope 3 downstream shows four measures rather than seven.</p>
+    <p>Coefficient with standard error beneath. <code>***</code> p&lt;0.01, <code>**</code> p&lt;0.05, <code>*</code> p&lt;0.10.</p>
+    <h3>Scope 1 emissions intensity</h3>
+<div class="formula">
+<div class="eq">ln(<b>y</b>)<sub>i,t</sub> &nbsp;=&nbsp; &sum;<sub>k</sub> &beta;<sub>k</sub>&middot;<b>x</b><sub>k,i,t</sub> &nbsp;+&nbsp; &delta;&middot;ln(report length)<sub>i,t</sub> &nbsp;+&nbsp; &alpha;<sub>i</sub> &nbsp;+&nbsp; &gamma;<sub>t</sub> &nbsp;+&nbsp; &epsilon;<sub>i,t</sub></div>
+<dl>
+<dt>y</dt><dd>ln(Scope 1 emissions intensity)</dd>
+<dt>x</dt><dd>the 6 Scope&nbsp;S1 measures &mdash; <code>energy efficiency</code>, <code>fuel switching</code>, <code>onsite renewables</code>, <code>fgas substitution</code>, <code>methane fugitive</code>, <code>process emissions</code></dd>
+<dt>Fixed effects</dt><dd>&alpha;<sub>i</sub> company, &gamma;<sub>t</sub> year. Estimates therefore come only from within-firm change over time.</dd>
+<dt>Sample</dt><dd>4,931 / 5,353 company-years over 1,218 / 1,238 firms (1-year / 3-year window)</dd>
+</dl></div>
+<div class="scroll"><table><caption>Scope 1 emissions intensity</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>energy efficiency</td><td>+0.015<br><span class="se">(0.037)</span></td><td>-0.078<br><span class="se">(0.054)</span></td><td>554</td></tr>
+<tr><td>fuel switching</td><td>+0.008<br><span class="se">(0.027)</span></td><td>+0.018<br><span class="se">(0.031)</span></td><td>341</td></tr>
+<tr><td>onsite renewables</td><td>+0.036<br><span class="se">(0.027)</span></td><td class="hit">+0.074**<br><span class="se">(0.033)</span></td><td>529</td></tr>
+<tr><td>fgas substitution</td><td>-0.032<br><span class="se">(0.055)</span></td><td>+0.035<br><span class="se">(0.058)</span></td><td>103</td></tr>
+<tr><td>methane fugitive</td><td>+0.034<br><span class="se">(0.059)</span></td><td>+0.078<br><span class="se">(0.069)</span></td><td>63</td></tr>
+<tr><td>process emissions</td><td>-0.000<br><span class="se">(0.035)</span></td><td>+0.017<br><span class="se">(0.037)</span></td><td>205</td></tr></tbody></table></div>
+<h3>Scope 1 emissions, absolute</h3>
+<div class="formula">
+<div class="eq">ln(<b>y</b>)<sub>i,t</sub> &nbsp;=&nbsp; &sum;<sub>k</sub> &beta;<sub>k</sub>&middot;<b>x</b><sub>k,i,t</sub> &nbsp;+&nbsp; &delta;&middot;ln(report length)<sub>i,t</sub> &nbsp;+&nbsp; &alpha;<sub>i</sub> &nbsp;+&nbsp; &gamma;<sub>t</sub> &nbsp;+&nbsp; &epsilon;<sub>i,t</sub></div>
+<dl>
+<dt>y</dt><dd>ln(Scope 1 emissions, absolute)</dd>
+<dt>x</dt><dd>the 6 Scope&nbsp;S1 measures &mdash; <code>energy efficiency</code>, <code>fuel switching</code>, <code>onsite renewables</code>, <code>fgas substitution</code>, <code>methane fugitive</code>, <code>process emissions</code></dd>
+<dt>Fixed effects</dt><dd>&alpha;<sub>i</sub> company, &gamma;<sub>t</sub> year. Estimates therefore come only from within-firm change over time.</dd>
+<dt>Sample</dt><dd>4,933 / 5,355 company-years over 1,219 / 1,239 firms (1-year / 3-year window)</dd>
+</dl></div>
+<div class="scroll"><table><caption>Scope 1 emissions, absolute</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>energy efficiency</td><td>+0.009<br><span class="se">(0.039)</span></td><td>-0.060<br><span class="se">(0.055)</span></td><td>554</td></tr>
+<tr><td>fuel switching</td><td>+0.013<br><span class="se">(0.029)</span></td><td>+0.034<br><span class="se">(0.033)</span></td><td>341</td></tr>
+<tr><td>onsite renewables</td><td>+0.045<br><span class="se">(0.028)</span></td><td>+0.070*<br><span class="se">(0.036)</span></td><td>529</td></tr>
+<tr><td>fgas substitution</td><td>-0.059<br><span class="se">(0.061)</span></td><td>+0.011<br><span class="se">(0.062)</span></td><td>103</td></tr>
+<tr><td>methane fugitive</td><td>+0.113*<br><span class="se">(0.068)</span></td><td class="hit">+0.177**<br><span class="se">(0.079)</span></td><td>63</td></tr>
+<tr><td>process emissions</td><td>+0.021<br><span class="se">(0.037)</span></td><td>+0.041<br><span class="se">(0.040)</span></td><td>205</td></tr></tbody></table></div>
+<h3>Scope 2 intensity, location-based</h3>
+<div class="formula">
+<div class="eq">ln(<b>y</b>)<sub>i,t</sub> &nbsp;=&nbsp; &sum;<sub>k</sub> &beta;<sub>k</sub>&middot;<b>x</b><sub>k,i,t</sub> &nbsp;+&nbsp; &delta;&middot;ln(report length)<sub>i,t</sub> &nbsp;+&nbsp; &alpha;<sub>i</sub> &nbsp;+&nbsp; &gamma;<sub>t</sub> &nbsp;+&nbsp; &epsilon;<sub>i,t</sub></div>
+<dl>
+<dt>y</dt><dd>ln(Scope 2 intensity, location-based)</dd>
+<dt>x</dt><dd>the 4 Scope&nbsp;S2 measures &mdash; <code>ppa</code>, <code>rec goo</code>, <code>renewable electricity general</code>, <code>low carbon heat</code></dd>
+<dt>Fixed effects</dt><dd>&alpha;<sub>i</sub> company, &gamma;<sub>t</sub> year. Estimates therefore come only from within-firm change over time.</dd>
+<dt>Sample</dt><dd>4,948 / 5,372 company-years over 1,222 / 1,242 firms (1-year / 3-year window)</dd>
+</dl></div>
+<div class="scroll"><table><caption>Scope 2 intensity, location-based</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>ppa</td><td>+0.059<br><span class="se">(0.039)</span></td><td class="hit">+0.183***<br><span class="se">(0.043)</span></td><td>209</td></tr>
+<tr><td>rec goo</td><td>-0.048<br><span class="se">(0.030)</span></td><td>+0.004<br><span class="se">(0.035)</span></td><td>310</td></tr>
+<tr><td>renewable electricity general</td><td>-0.038<br><span class="se">(0.028)</span></td><td class="hit">-0.084***<br><span class="se">(0.032)</span></td><td>465</td></tr>
+<tr><td>low carbon heat</td><td>-0.054<br><span class="se">(0.037)</span></td><td>-0.008<br><span class="se">(0.033)</span></td><td>120</td></tr></tbody></table></div>
+<h3>Scope 2 intensity, market-based</h3>
+<div class="formula">
+<div class="eq">ln(<b>y</b>)<sub>i,t</sub> &nbsp;=&nbsp; &sum;<sub>k</sub> &beta;<sub>k</sub>&middot;<b>x</b><sub>k,i,t</sub> &nbsp;+&nbsp; &delta;&middot;ln(report length)<sub>i,t</sub> &nbsp;+&nbsp; &alpha;<sub>i</sub> &nbsp;+&nbsp; &gamma;<sub>t</sub> &nbsp;+&nbsp; &epsilon;<sub>i,t</sub></div>
+<dl>
+<dt>y</dt><dd>ln(Scope 2 intensity, market-based)</dd>
+<dt>x</dt><dd>the 4 Scope&nbsp;S2 measures &mdash; <code>ppa</code>, <code>rec goo</code>, <code>renewable electricity general</code>, <code>low carbon heat</code></dd>
+<dt>Fixed effects</dt><dd>&alpha;<sub>i</sub> company, &gamma;<sub>t</sub> year. Estimates therefore come only from within-firm change over time.</dd>
+<dt>Sample</dt><dd>1,152 / 1,208 company-years over 436 / 451 firms (1-year / 3-year window)</dd>
+</dl></div>
+<div class="scroll"><table><caption>Scope 2 intensity, market-based</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>ppa</td><td>-0.053<br><span class="se">(0.059)</span></td><td>-0.057<br><span class="se">(0.076)</span></td><td>91</td></tr>
+<tr><td>rec goo</td><td>-0.042<br><span class="se">(0.044)</span></td><td>-0.030<br><span class="se">(0.060)</span></td><td>134</td></tr>
+<tr><td>renewable electricity general</td><td>-0.031<br><span class="se">(0.046)</span></td><td>-0.070<br><span class="se">(0.073)</span></td><td>167</td></tr>
+<tr><td>low carbon heat</td><td>-0.063<br><span class="se">(0.085)</span></td><td>+0.032<br><span class="se">(0.115)</span></td><td>56</td></tr></tbody></table></div>
+<h3>Scope 3 downstream intensity</h3>
+<div class="formula">
+<div class="eq">ln(<b>y</b>)<sub>i,t</sub> &nbsp;=&nbsp; &sum;<sub>k</sub> &beta;<sub>k</sub>&middot;<b>x</b><sub>k,i,t</sub> &nbsp;+&nbsp; &delta;&middot;ln(report length)<sub>i,t</sub> &nbsp;+&nbsp; &alpha;<sub>i</sub> &nbsp;+&nbsp; &gamma;<sub>t</sub> &nbsp;+&nbsp; &epsilon;<sub>i,t</sub></div>
+<dl>
+<dt>y</dt><dd>ln(Scope 3 downstream intensity)</dd>
+<dt>x</dt><dd>the 4 Scope&nbsp;S3D measures &mdash; <code>c9 downstream transport</code>, <code>c11 use phase</code>, <code>c12 eol</code>, <code>c15 investments</code></dd>
+<dt>Fixed effects</dt><dd>&alpha;<sub>i</sub> company, &gamma;<sub>t</sub> year. Estimates therefore come only from within-firm change over time.</dd>
+<dt>Sample</dt><dd>4,515 / 4,870 company-years over 1,184 / 1,205 firms (1-year / 3-year window)</dd>
+</dl></div>
+<div class="scroll"><table><caption>Scope 3 downstream intensity</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>c9 downstream transport</td><td>-0.057<br><span class="se">(0.102)</span></td><td>-0.012<br><span class="se">(0.101)</span></td><td>122</td></tr>
+<tr><td>c11 use phase</td><td>+0.000<br><span class="se">(0.102)</span></td><td>+0.034<br><span class="se">(0.093)</span></td><td>175</td></tr>
+<tr><td>c12 eol</td><td>-0.042<br><span class="se">(0.082)</span></td><td>-0.094<br><span class="se">(0.091)</span></td><td>231</td></tr>
+<tr><td>c15 investments</td><td>-0.016<br><span class="se">(0.229)</span></td><td>-0.136<br><span class="se">(0.199)</span></td><td>67</td></tr></tbody></table></div>
+    <h3>Comment on Part 1</h3>
+    <p>Most estimates are small relative to their standard errors. The ones that stand out:</p>
+    <ul class="plain">
+      <li><strong>Power purchase agreements</strong> on location-based Scope 2: <span class="num">+0.183</span> (s.e. 0.043) at three years, the largest estimate in the study, and <span class="num">+0.059</span> (s.e. 0.039) at one year. Note the outcome &mdash; the location-based figure uses average grid intensity and does not credit contracts, so a procurement measure is not expected to move it.</li>
+      <li><strong>General renewable electricity</strong> on the same outcome: <span class="num">&minus;0.084</span> (s.e. 0.032). The expected direction, and the only scope-matched estimate pointing down with any precision.</li>
+      <li><strong>On-site renewables</strong> on Scope 1 intensity: <span class="num">+0.074</span> (s.e. 0.033), on 398 switching firms.</li>
+      <li><strong>Methane and fugitive emissions</strong> on absolute Scope 1: <span class="num">+0.177</span> (s.e. 0.080), but on only 47 switching firms &mdash; the thinnest identification here.</li>
+    </ul>
+    <p><strong>Energy efficiency</strong> is notable for the opposite reason. It has the most switching firms of any Scope 1 measure (554 at one year, 308 at three), yet the estimate is <span class="num">+0.015</span> (s.e. 0.037) at one year and <span class="num">&minus;0.078</span> (s.e. 0.054) at three. It changes sign between windows and is imprecise in both.</p>
+    <p>Two outcomes produce nothing separable from zero. Market-based Scope 2 &mdash; the figure that <em>does</em> credit renewable contracts &mdash; has all four measures between <span class="num">&minus;0.070</span> and <span class="num">+0.032</span> with standard errors of similar size; it also has much the smallest sample, roughly 1,200 company-years against about 5,000 elsewhere, since Trucost reports it only from 2020. Scope 3 downstream ranges from <span class="num">&minus;0.136</span> to <span class="num">+0.034</span> against standard errors of 0.08&ndash;0.23.</p>
+  </section>
+
+  <section>
+    <h2>Part 2 &mdash; Five scope-level indicators</h2>
+    <p>A coarser grouping. Here <b>x</b> is five indicators, one per emissions scope, each firing when the report discusses any measure acting on that scope. The same five enter every regression regardless of outcome, so the matched indicator can be read against the unmatched ones. These fire far more often than individual measures and so carry more switching firms.</p>
+    <div class="formula">
+      <div class="eq">ln(<b>y</b>)<sub>i,t</sub> &nbsp;=&nbsp; &sum;<sub>k</sub> &beta;<sub>k</sub>&middot;<b>x</b><sub>k,i,t</sub> &nbsp;+&nbsp; &delta;&middot;ln(report length)<sub>i,t</sub> &nbsp;+&nbsp; &alpha;<sub>i</sub> &nbsp;+&nbsp; &gamma;<sub>t</sub> &nbsp;+&nbsp; &epsilon;<sub>i,t</sub></div>
+      <dl>
+        <dt>y</dt><dd>Each of the seven emissions outcomes in turn, logged.</dd>
+        <dt>x</dt><dd>Five scope-level indicators &mdash; <code>S1</code>, <code>S2</code>, <code>S3U</code>, <code>S3D</code>, <code>CDR</code></dd>
+        <dt>Fixed effects</dt><dd>&alpha;<sub>i</sub> company, &gamma;<sub>t</sub> year.</dd>
+      </dl>
+    </div>
+    <div class="scroll"><table><caption>Scope 1 emissions intensity</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>S1</td><td>-0.054<br><span class="se">(0.041)</span></td><td class="hit">-0.186***<br><span class="se">(0.059)</span></td><td>471</td></tr>
+<tr><td>S2</td><td>-0.014<br><span class="se">(0.031)</span></td><td>-0.019<br><span class="se">(0.039)</span></td><td>604</td></tr>
+<tr><td>S3U</td><td>-0.006<br><span class="se">(0.028)</span></td><td>+0.017<br><span class="se">(0.034)</span></td><td>629</td></tr>
+<tr><td>S3D</td><td>+0.014<br><span class="se">(0.029)</span></td><td>+0.056<br><span class="se">(0.036)</span></td><td>419</td></tr>
+<tr><td>CDR</td><td>+0.005<br><span class="se">(0.028)</span></td><td>+0.018<br><span class="se">(0.032)</span></td><td>448</td></tr></tbody></table></div>
+<div class="scroll"><table><caption>Scope 1 emissions, absolute</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>S1</td><td>-0.055<br><span class="se">(0.042)</span></td><td class="hit">-0.178***<br><span class="se">(0.061)</span></td><td>471</td></tr>
+<tr><td>S2</td><td>-0.008<br><span class="se">(0.032)</span></td><td>-0.002<br><span class="se">(0.040)</span></td><td>604</td></tr>
+<tr><td>S3U</td><td>-0.011<br><span class="se">(0.030)</span></td><td>+0.014<br><span class="se">(0.035)</span></td><td>629</td></tr>
+<tr><td>S3D</td><td>+0.027<br><span class="se">(0.034)</span></td><td>+0.058<br><span class="se">(0.037)</span></td><td>419</td></tr>
+<tr><td>CDR</td><td>+0.006<br><span class="se">(0.029)</span></td><td>+0.023<br><span class="se">(0.034)</span></td><td>448</td></tr></tbody></table></div>
+<div class="scroll"><table><caption>Scope 2 intensity, location-based</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>S1</td><td>-0.034<br><span class="se">(0.031)</span></td><td>-0.079*<br><span class="se">(0.042)</span></td><td>474</td></tr>
+<tr><td>S2</td><td>-0.022<br><span class="se">(0.027)</span></td><td>-0.059*<br><span class="se">(0.032)</span></td><td>604</td></tr>
+<tr><td>S3U</td><td>-0.001<br><span class="se">(0.026)</span></td><td>+0.024<br><span class="se">(0.032)</span></td><td>631</td></tr>
+<tr><td>S3D</td><td>+0.023<br><span class="se">(0.024)</span></td><td class="hit">+0.062**<br><span class="se">(0.029)</span></td><td>419</td></tr>
+<tr><td>CDR</td><td>+0.000<br><span class="se">(0.030)</span></td><td>-0.015<br><span class="se">(0.031)</span></td><td>450</td></tr></tbody></table></div>
+<div class="scroll"><table><caption>Scope 2 intensity, market-based</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>S1</td><td>-0.109<br><span class="se">(0.093)</span></td><td>-0.099<br><span class="se">(0.149)</span></td><td>91</td></tr>
+<tr><td>S2</td><td>+0.033<br><span class="se">(0.059)</span></td><td>+0.090<br><span class="se">(0.110)</span></td><td>98</td></tr>
+<tr><td>S3U</td><td>+0.093<br><span class="se">(0.063)</span></td><td>+0.055<br><span class="se">(0.092)</span></td><td>120</td></tr>
+<tr><td>S3D</td><td>-0.087*<br><span class="se">(0.049)</span></td><td>-0.082<br><span class="se">(0.073)</span></td><td>155</td></tr>
+<tr><td>CDR</td><td>-0.030<br><span class="se">(0.050)</span></td><td>-0.048<br><span class="se">(0.074)</span></td><td>149</td></tr></tbody></table></div>
+<div class="scroll"><table><caption>Scope 3 downstream intensity</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>S1</td><td>-0.039<br><span class="se">(0.067)</span></td><td>+0.114<br><span class="se">(0.085)</span></td><td>441</td></tr>
+<tr><td>S2</td><td class="hit">-0.138**<br><span class="se">(0.060)</span></td><td>-0.126*<br><span class="se">(0.072)</span></td><td>572</td></tr>
+<tr><td>S3U</td><td>+0.025<br><span class="se">(0.055)</span></td><td>-0.005<br><span class="se">(0.072)</span></td><td>589</td></tr>
+<tr><td>S3D</td><td>-0.087<br><span class="se">(0.063)</span></td><td>-0.037<br><span class="se">(0.079)</span></td><td>396</td></tr>
+<tr><td>CDR</td><td>+0.038<br><span class="se">(0.071)</span></td><td class="hit">-0.177**<br><span class="se">(0.074)</span></td><td>417</td></tr></tbody></table></div>
+<div class="scroll"><table><caption>Scope 1 + tier-1 indirect intensity</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>S1</td><td>-0.021<br><span class="se">(0.016)</span></td><td class="hit">-0.060***<br><span class="se">(0.022)</span></td><td>474</td></tr>
+<tr><td>S2</td><td>+0.003<br><span class="se">(0.015)</span></td><td>-0.009<br><span class="se">(0.018)</span></td><td>604</td></tr>
+<tr><td>S3U</td><td>+0.020<br><span class="se">(0.013)</span></td><td class="hit">+0.039**<br><span class="se">(0.015)</span></td><td>631</td></tr>
+<tr><td>S3D</td><td>+0.003<br><span class="se">(0.012)</span></td><td>+0.028*<br><span class="se">(0.016)</span></td><td>419</td></tr>
+<tr><td>CDR</td><td>+0.015<br><span class="se">(0.013)</span></td><td>-0.004<br><span class="se">(0.016)</span></td><td>450</td></tr></tbody></table></div>
+<div class="scroll"><table><caption>Monetised GHG damage, % of revenue</caption>
+<thead><tr><th>x &mdash; measure</th><th>1-year window</th><th>3-year window</th><th>Firms switching</th></tr></thead><tbody>
+<tr><td>S1</td><td>-0.005<br><span class="se">(0.011)</span></td><td>-0.027*<br><span class="se">(0.015)</span></td><td>474</td></tr>
+<tr><td>S2</td><td>-0.001<br><span class="se">(0.011)</span></td><td>-0.011<br><span class="se">(0.013)</span></td><td>604</td></tr>
+<tr><td>S3U</td><td>+0.010<br><span class="se">(0.009)</span></td><td class="hit">+0.022**<br><span class="se">(0.011)</span></td><td>631</td></tr>
+<tr><td>S3D</td><td>+0.004<br><span class="se">(0.009)</span></td><td>+0.019<br><span class="se">(0.012)</span></td><td>419</td></tr>
+<tr><td>CDR</td><td>+0.012<br><span class="se">(0.010)</span></td><td>-0.001<br><span class="se">(0.012)</span></td><td>450</td></tr></tbody></table></div>
+    <h3>Comment on Part 2</h3>
+    <p>The clearest result in the exercise is here. <strong>The Scope 1 indicator is <span class="num">&minus;0.186</span> (s.e. 0.059) on Scope 1 intensity</strong> at the 3-year window, and <span class="num">&minus;0.178</span> (s.e. 0.061) on absolute Scope 1 &mdash; firms show roughly 17&ndash;19% lower Scope 1 emissions in years they discuss any Scope 1 measure than in their own other years. It carries through to the Scope 1 + tier-1 aggregate at <span class="num">&minus;0.060</span> (s.e. 0.022), the attenuation one would expect given Scope 1 is only part of that aggregate.</p>
+    <p>Right sign, on the outcome the indicator is meant to act on, with 277 switching firms behind it. This is the only place in the study where those three things coincide.</p>
+    <p>It depends on the window. At one year the same coefficient is <span class="num">&minus;0.055</span> (s.e. 0.042) &mdash; same direction, under a third the size, not separable from zero. Since the 1-year indicators are much noisier, attenuation at the shorter window is what one would expect if the 3-year estimate is real; but the gap is large enough to be worth treating carefully rather than assuming.</p>
+    <p>Elsewhere the pattern is harder to read. Scope 3 upstream is <span class="num">+0.039</span> (s.e. 0.015) on the aggregate outcome, Scope 3 downstream is <span class="num">+0.062</span> (s.e. 0.029) on location-based Scope 2, and carbon removal is <span class="num">&minus;0.177</span> (s.e. 0.074) on Scope 3 downstream. In each case indicator and outcome belong to different scopes.</p>
+  </section>
+
+  <section>
+    <h2>Part 3 &mdash; All thirty measures entered together</h2>
+    <p>The broadest specification: <b>x</b> is every measure in the taxonomy at once, regardless of scope, so each coefficient is conditional on all the others. As in Part 1, measures with fewer than 30 switching firms are dropped from a given regression.</p>
+    <div class="formula">
+      <div class="eq">ln(<b>y</b>)<sub>i,t</sub> &nbsp;=&nbsp; &sum;<sub>k=1</sub><sup>30</sup> &beta;<sub>k</sub>&middot;<b>x</b><sub>k,i,t</sub> &nbsp;+&nbsp; &delta;&middot;ln(report length)<sub>i,t</sub> &nbsp;+&nbsp; &alpha;<sub>i</sub> &nbsp;+&nbsp; &gamma;<sub>t</sub> &nbsp;+&nbsp; &epsilon;<sub>i,t</sub></div>
+      <dl>
+        <dt>y</dt><dd>Each of the seven emissions outcomes in turn, logged.</dd>
+        <dt>x</dt><dd>All 30 tier-2 measures simultaneously &mdash; the six Scope 1 measures, four Scope 2, ten Scope 3 upstream, seven Scope 3 downstream and three carbon-removal measures.</dd>
+        <dt>Fixed effects</dt><dd>&alpha;<sub>i</sub> company, &gamma;<sub>t</sub> year.</dd>
+      </dl>
+    </div>
+    <p>Listing every coefficient would run to several hundred rows; the estimates separable from zero are below, and the rest are in the results files.</p>
+    <div class="scroll"><table><caption>Tier-2 estimates distinguishable from zero, ranked by p-value</caption>
+<thead><tr><th>x &mdash; measure</th><th>y &mdash; outcome</th><th>Win.</th><th>Coef.</th><th>s.e.</th><th>p</th><th>Firms</th></tr></thead><tbody>
+<tr><td>ppa</td><td>Scope 2 intensity, location-based</td><td>3</td><td>+0.173</td><td>0.044</td><td>0.0001</td><td>183</td></tr>
+<tr><td>c1 material substitution</td><td>Scope 2 intensity, location-based</td><td>1</td><td>+0.086</td><td>0.025</td><td>0.0006</td><td>429</td></tr>
+<tr><td>voluntary offsets</td><td>Scope 1 + tier-1 indirect intensity</td><td>3</td><td>-0.063</td><td>0.020</td><td>0.0016</td><td>222</td></tr>
+<tr><td>tech cdr</td><td>Scope 1 + tier-1 indirect intensity</td><td>3</td><td>+0.101</td><td>0.032</td><td>0.0017</td><td>79</td></tr>
+<tr><td>c11 use phase</td><td>Scope 1 emissions, absolute</td><td>1</td><td>+0.161</td><td>0.051</td><td>0.0017</td><td>185</td></tr>
+<tr><td>nbs</td><td>Monetised GHG damage, % of revenue</td><td>3</td><td>+0.044</td><td>0.014</td><td>0.0019</td><td>264</td></tr>
+<tr><td>ppa</td><td>Scope 1 emissions, absolute</td><td>3</td><td>+0.140</td><td>0.045</td><td>0.0019</td><td>183</td></tr>
+<tr><td>voluntary offsets</td><td>Monetised GHG damage, % of revenue</td><td>3</td><td>-0.047</td><td>0.016</td><td>0.0025</td><td>222</td></tr>
+<tr><td>c1 supplier engagement</td><td>Scope 2 intensity, location-based</td><td>3</td><td>-0.093</td><td>0.031</td><td>0.0029</td><td>429</td></tr>
+<tr><td>ppa</td><td>Scope 1 emissions, absolute</td><td>1</td><td>+0.121</td><td>0.042</td><td>0.0037</td><td>209</td></tr>
+<tr><td>tech cdr</td><td>Monetised GHG damage, % of revenue</td><td>3</td><td>+0.079</td><td>0.027</td><td>0.0040</td><td>79</td></tr>
+<tr><td>process emissions</td><td>Scope 3 downstream intensity</td><td>3</td><td>-0.230</td><td>0.082</td><td>0.0053</td><td>165</td></tr>
+<tr><td>tech cdr</td><td>Monetised GHG damage, % of revenue</td><td>1</td><td>+0.073</td><td>0.027</td><td>0.0058</td><td>86</td></tr>
+<tr><td>c1 material substitution</td><td>Scope 1 + tier-1 indirect intensity</td><td>1</td><td>+0.040</td><td>0.015</td><td>0.0066</td><td>429</td></tr>
+<tr><td>tech cdr</td><td>Scope 1 + tier-1 indirect intensity</td><td>1</td><td>+0.085</td><td>0.031</td><td>0.0072</td><td>86</td></tr>
+<tr><td>ppa</td><td>Scope 1 emissions intensity</td><td>3</td><td>+0.114</td><td>0.042</td><td>0.0073</td><td>183</td></tr>
+<tr><td>c11 use phase</td><td>Scope 1 emissions intensity</td><td>1</td><td>+0.105</td><td>0.039</td><td>0.0076</td><td>185</td></tr>
+<tr><td>energy efficiency</td><td>Scope 3 downstream intensity</td><td>1</td><td>-0.154</td><td>0.060</td><td>0.0105</td><td>531</td></tr>
+<tr><td>nbs</td><td>Scope 1 + tier-1 indirect intensity</td><td>3</td><td>+0.046</td><td>0.018</td><td>0.0111</td><td>264</td></tr>
+<tr><td>c5 waste ops</td><td>Monetised GHG damage, % of revenue</td><td>3</td><td>+0.027</td><td>0.011</td><td>0.0125</td><td>489</td></tr>
+<tr><td>renewable electricity general</td><td>Scope 2 intensity, location-based</td><td>3</td><td>-0.082</td><td>0.033</td><td>0.0137</td><td>373</td></tr>
+<tr><td>voluntary offsets</td><td>Scope 1 emissions, absolute</td><td>1</td><td>-0.098</td><td>0.040</td><td>0.0139</td><td>257</td></tr>
+<tr><td>c6 business travel</td><td>Scope 1 + tier-1 indirect intensity</td><td>1</td><td>+0.057</td><td>0.024</td><td>0.0156</td><td>125</td></tr>
+<tr><td>onsite renewables</td><td>Scope 3 downstream intensity</td><td>1</td><td>-0.147</td><td>0.061</td><td>0.0156</td><td>495</td></tr>
+<tr><td>c5 waste ops</td><td>Scope 1 + tier-1 indirect intensity</td><td>3</td><td>+0.034</td><td>0.014</td><td>0.0166</td><td>489</td></tr>
+<tr><td>c6 business travel</td><td>Monetised GHG damage, % of revenue</td><td>1</td><td>+0.035</td><td>0.015</td><td>0.0210</td><td>125</td></tr>
+<tr><td>energy efficiency</td><td>Scope 3 downstream intensity</td><td>3</td><td>-0.191</td><td>0.083</td><td>0.0220</td><td>283</td></tr>
+<tr><td>c6 business travel</td><td>Scope 2 intensity, market-based</td><td>1</td><td>+0.276</td><td>0.121</td><td>0.0229</td><td>45</td></tr>
+<tr><td>c6 business travel</td><td>Scope 2 intensity, location-based</td><td>1</td><td>+0.101</td><td>0.045</td><td>0.0240</td><td>125</td></tr>
+<tr><td>packaging</td><td>Scope 3 downstream intensity</td><td>3</td><td>+0.210</td><td>0.094</td><td>0.0257</td><td>257</td></tr>
+<tr><td>fuel switching</td><td>Scope 2 intensity, location-based</td><td>3</td><td>-0.069</td><td>0.031</td><td>0.0289</td><td>271</td></tr>
+<tr><td>fuel switching</td><td>Scope 2 intensity, market-based</td><td>1</td><td>+0.107</td><td>0.049</td><td>0.0299</td><td>106</td></tr>
+<tr><td>nbs</td><td>Scope 2 intensity, location-based</td><td>1</td><td>+0.075</td><td>0.035</td><td>0.0307</td><td>303</td></tr>
+<tr><td>c11 use phase</td><td>Scope 1 emissions, absolute</td><td>3</td><td>+0.099</td><td>0.047</td><td>0.0356</td><td>153</td></tr>
+<tr><td>c1 supplier engagement</td><td>Scope 2 intensity, location-based</td><td>1</td><td>-0.058</td><td>0.028</td><td>0.0363</td><td>533</td></tr>
+<tr><td>voluntary offsets</td><td>Scope 1 emissions, absolute</td><td>3</td><td>-0.083</td><td>0.040</td><td>0.0365</td><td>222</td></tr>
+<tr><td>c1 material substitution</td><td>Monetised GHG damage, % of revenue</td><td>1</td><td>+0.023</td><td>0.011</td><td>0.0391</td><td>429</td></tr>
+<tr><td>c5 waste ops</td><td>Scope 2 intensity, market-based</td><td>1</td><td>-0.097</td><td>0.047</td><td>0.0405</td><td>203</td></tr>
+<tr><td>renewable electricity general</td><td>Scope 1 emissions intensity</td><td>3</td><td>-0.076</td><td>0.037</td><td>0.0413</td><td>372</td></tr>
+<tr><td>methane fugitive</td><td>Scope 1 emissions, absolute</td><td>3</td><td>+0.161</td><td>0.079</td><td>0.0420</td><td>47</td></tr>
+<tr><td>renewable electricity general</td><td>Scope 1 emissions, absolute</td><td>3</td><td>-0.082</td><td>0.040</td><td>0.0422</td><td>372</td></tr>
+<tr><td>process emissions</td><td>Scope 2 intensity, market-based</td><td>3</td><td>+0.175</td><td>0.087</td><td>0.0441</td><td>41</td></tr>
+<tr><td>fgas substitution</td><td>Scope 3 downstream intensity</td><td>3</td><td>+0.223</td><td>0.112</td><td>0.0457</td><td>92</td></tr>
+</tbody></table></div>
+    <h3>Comment on Part 3</h3>
+    <p>Reading by measure rather than by outcome:</p>
+    <ul class="plain">
+      <li><strong>Power purchase agreements</strong> appear four times, always positive, across three outcomes &mdash; location-based Scope 2 (<span class="num">+0.173</span>), absolute Scope 1 at both windows (<span class="num">+0.140</span>, <span class="num">+0.122</span>) and Scope 1 intensity (<span class="num">+0.114</span>). Only one of those is an outcome a procurement contract acts on.</li>
+      <li><strong>Technological carbon removal</strong> appears four times, always positive (<span class="num">+0.073</span> to <span class="num">+0.101</span>), on 79&ndash;86 switching firms.</li>
+      <li><strong>Voluntary offsets</strong> appear four times, always negative (<span class="num">&minus;0.047</span> to <span class="num">&minus;0.098</span>).</li>
+      <li><strong>Energy efficiency</strong> appears twice, both negative and sizeable (<span class="num">&minus;0.154</span>, <span class="num">&minus;0.191</span>) &mdash; but on Scope 3 downstream, not on Scope 1 where it acts.</li>
+      <li><strong>Supplier engagement</strong> is negative on location-based Scope 2 at both windows (<span class="num">&minus;0.093</span>, <span class="num">&minus;0.058</span>).</li>
+    </ul>
+    <p>Estimates here are generally larger than in Part 1 but rest on the same underlying variation, now spread across thirty simultaneous indicators. Several land on outcomes outside their own scope: use-phase emissions on absolute Scope 1, business travel on both Scope 2 measures, process emissions on Scope 3 downstream.</p>
+  </section>
+
+  <section>
+    <h2>Taking the three parts together</h2>
+    <ul class="plain">
+      <li><strong>Part 1</strong> &mdash; scope-matched measures give small, imprecise estimates. The two clearest sit on location-based Scope 2 and point in opposite directions.</li>
+      <li><strong>Part 2</strong> &mdash; the coarser scope-level indicator produces the one result with the expected sign on its own outcome: Scope 1 disclosure against Scope 1 emissions, around &minus;18% at the 3-year window.</li>
+      <li><strong>Part 3</strong> &mdash; with all thirty measures at once the estimates grow but scatter across outcomes, frequently landing where the measure does not act.</li>
+    </ul>
+    <p>That Part 2 outperforms Part 1 is itself informative: pooling a scope&rsquo;s measures into one indicator produces a cleaner signal than the individual measures do, which is consistent with the individual indicators being noisy proxies for whether a firm is doing something in that scope at all.</p>
+    <p>Two things would sharpen the picture. Sector-by-year fixed effects would test whether the Scope 2 estimates reflect which firms sign renewable contracts &mdash; their sector, or the grid they draw from &mdash; rather than an effect of signing them. And hand-coding a sample of company-years against the extracted indicators would show how much of the imprecision throughout is measurement rather than absence of a relationship.</p>
+  </section>
+
+  <div class="footnote">
+    <p><strong>Estimation.</strong> Fixed effects absorbed via within transformation (pyfixest). Company-years with zero or missing emissions are dropped, since the outcome is logged. Firms observed only once are removed iteratively. Disclosure indicators are contemporaneous with the outcome year &mdash; no lag is applied.</p>
+    <p><strong>Coverage.</strong> Scope 3 upstream is not used as an outcome: only about 11% of its values are firm-reported, the rest being Trucost&rsquo;s revenue-based model. Scope 2 market-based is reported only from 2020. Scope 1 is 69% firm-reported, location-based Scope 2 66%, Scope 3 downstream 40%.</p>
+    <p>Full coefficient tables, one folder per regression: <code>batch_folder/test_trucost/regression/results/</code>.</p>
+  </div>
+
+</div>
+</body>
+</html>

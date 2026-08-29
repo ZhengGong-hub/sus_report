@@ -178,7 +178,7 @@ is essentially all-US: 2,038 of 2,040 firms.
 ## Reading notes
 
 - **Not a regression sample.** The estimator further drops `y <= 0`, rows with missing regressors,
-  singleton firms, and flags identified off fewer than `min_switchers` firms.
+  singleton firms (iterated, by pyfixest), and flags identified off fewer than `min_switchers` firms.
 - **Rows are not independent.** The same company-year appears once per window, and within a wide
   window neighbouring cells reuse the same filings. Never pool windows in one regression.
 - **`year` is fiscal, not calendar**, wherever the date join matched — it is the Trucost row's own

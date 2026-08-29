@@ -90,3 +90,11 @@ def regression_results_csv(run_name: str) -> str:  # tidy: one row per spec × t
 
 def regression_summary_md(run_name: str) -> str:  # headline specs, human-readable
     return os.path.join(regression_dir(run_name), "summary.md")
+
+
+def regression_results_dir(run_name: str) -> str:  # one subfolder per grid cell
+    return os.path.join(regression_dir(run_name), "results")
+
+
+def regression_spec_dir(run_name: str, spec_name: str) -> str:
+    return os.path.join(regression_results_dir(run_name), spec_name)

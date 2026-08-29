@@ -128,44 +128,94 @@ regression:
     # all text — and needs n_chunks_total in the stage-2 ref parquet (re-run chunking if absent).
     share_denominator: all_chunks
 
-  # ── stage 5b: the regression grid ───────────────────────────────────────────
-  # every combination below is estimated as: ln(y) ~ flags + controls + firm FE + year FE.
-  # Results land in regression/results.csv (one row per spec × term); the first entry of
-  # each list defines the headline spec written to regression/summary.md.
+  # ── stage 5b: the regression ────────────────────────────────────────────────
+  # Two regressions, nothing else: ln(y) ~ 30 tier-2 adoption dummies + controls
+  # + firm FE + year FE, estimated with pyfixest and SEs clustered on the firm.
+  # The right-hand side is the whole tier-2 taxonomy (every `tier2_<measure>_any`)
+  # and is fixed in code — it is the design of the study, not a knob.
+  # Results land in regression/results.csv (one row per regression × term).
   specs:
-    # S2M (market-based) is the primary Scope 2 outcome: it is the one contracted renewables
-    # can actually move, and it is 99.9% firm-disclosed. S2L (location-based) is kept as the
-    # placebo — a PPA cannot shift it by construction, so a null there is the correct result.
-    # S3U is included but expect nothing: 89% of it is Trucost's revenue model — and with
-    # disclosed_only=false leading, those modelled cells are now inside the headline sample.
-    scopes: [S1, S2M, S2L, S3U, S3D]
-    # intensity = tCO2e per $M revenue; absolute = tCO2e, which adds ln(revenue) as a
-    # control instead of forcing its coefficient to -1 the way a ratio outcome does.
-    # *_growth = ln(y_t / y_t-1), the year-on-year log change, with y_t-1 taken from the
-    # Trucost frame (near-continuous) rather than the report panel (only years the firm filed).
-    # Read these differently from the level specs: the regressors are stocks — a firm keeps
-    # mentioning its PPA — so a growth coefficient is "do firms carrying this measure trend
-    # down faster", NOT the level effect the intensity/absolute specs estimate. A measure that
-    # permanently lowers the level shows up in growth only in its adoption year, so a null here
-    # is not evidence against a level effect. Firm FE on a growth outcome is a firm-specific
-    # trend, not a firm-specific level. Sample is strictly smaller (both years must be > 0):
-    # S1 89.6% of cells vs 92.3%, but S2M only 13.7% vs 23.2% — expect S2M to be underpowered.
-    # ln(y_t/y_t-1) has sd 0.70 with 7.8% of cells beyond a 2.7x move, mostly restatements and
-    # M&A rather than physical change, so these standard errors are wide by construction.
-    outcome_forms: [intensity, absolute, intensity_growth, absolute_growth]
-    windows: [1, 3]
-    regressor_forms: [any, share]        # the dummy, or the share of chunks carrying the flag
-    # tier1_* pool a whole scope into one dummy, which is noisier to fire but far less
-    # sensitive to whether one specific measure happened to land in a sampled chunk
-    regressor_sets: [scope_matched, scope_matched_plus_gov, tier1, tier1_matched]
-    lags: [0]                            # contemporaneous only; add 1, 2 to lag the actions
-    # true = drop cells whose y is a Trucost model (score > panel.disclosed_max_score).
-    # NOTE (2026-08-23, supervisor): allow all data — false leads the list, so the headline
-    # spec in summary.md is now estimated on every company-year with a positive outcome,
-    # modelled or disclosed. true stays second so the firm-disclosed-only version is still
-    # estimated and lands in results.csv as the robustness check; flip the order back to
-    # [true, false] to make that one the headline again.
-    disclosed_only: [false, true]
-    controls: [log_n_chunks, n_years]    # sampling exposure, and window history depth
+    # Pooling width in years for the REGRESSORS only (the panel carries 1, 2, 3): a cell anchored
+    # at year t takes its flags from every report covering t, t-1, t-2. The outcome does not pool
+    # — y is still the anchor year's Trucost value. Wider is far better measured: mean
+    # corr(flag_t, flag_t-1) is 0.389 at window 1, 0.683 at 2, 0.772 at 3, so most of the
+    # year-to-year flicker at window 1 is sampling noise rather than real switching, and that
+    # noise attenuates every coefficient toward zero. Keep window 1 as the robustness check.
+    window: [1, 3]
+    # One regression per column listed here — any numeric panel column works, and the same
+    # controls and the same dummies are used for all of them.
+    # The two below are Trucost's monetised GHG damage, direct and indirect, and are the same
+    # quantity: impact_ratio = absolute / trucost_total_revenue × 100, verified exactly on
+    # this panel (median ratio 1.0000). Both 92.6% positive at window=1 → 5,295 rows.
+    # NOTE these are dollars of damage, not tCO2e. If Trucost's damage-cost factors are
+    # constant per tonne the coefficients read as emission elasticities; a common annual
+    # drift in the factors is absorbed by the year FE, a sector-specific one is not.
+    outcomes:
+      # -- primary: physical tCO2e, firm-disclosed, and they actually move ------------------
+      # within-firm sd of ln(y) in brackets — the variation left for the dummies after firm FE
+      - intensity_ghg_scope_1                        # S1, 68.9% disclosed [0.545]
+      - absolute_ghg_scope_1                         # same, unnormalised
+      - intensity_ghg_scope_2_location_based         # S2L, 65.8% disclosed [0.490]
+      # S2M/S2L is a built-in falsification pair: a PPA or REC moves the market-based number by
+      # construction and CANNOT move the location-based one, so tier2_ppa_any loading on S2M but
+      # not S2L is the result we want, and loading on both means we are picking up something else.
+      - intensity_ghg_scope_2_market_based           # S2M, 99.8% disclosed but only 1,327 cells
+      - intensity_ghg_scope_3_downstream_total       # S3D, 39.6% disclosed [0.934]
+      - intensity_ghg_direct_and_first_tier_indirect # Trucost's own S1+tier-1 aggregate
+      # NOT S3U: 11.0% disclosed, so ln(S3U) is Trucost's revenue model plus a sector constant
+      # and cannot respond to anything a firm does. Excluded on purpose, not overlooked.
+      # -- continuity with the earlier runs -------------------------------------------------
+      - impact_ratio_ghg_direct_and_indirect_cost    # monetised damage, % of revenue [0.261]
+    # true  = y enters as ln(y). Coefficients read as proportional effects, and cells with
+    #         y <= 0 drop out of that regression (only that one) because ln needs y > 0.
+    # false = y enters in levels. Coefficients are in y's own units, zero cells are kept, and
+    #         the fit is driven by the largest firms rather than by proportional change.
+    # Neither is a no-op switch: it changes the sample as well as the scale whenever an
+    # outcome carries zeros. The two outcomes above have none at window=1, so for them the
+    # sample is identical either way and only the units change.
+    log_transformation_y: true
+    # Which families of adoption dummies to estimate. tier2 = 30 specific measures,
+    # tier1 = 5 scope-level buckets, governance = 4 commitment flags. Each family is its own
+    # regression (families × outcomes), NOT a shared right-hand side: tier1 and tier2 measure
+    # the same thing at different resolutions, so a tier1 bucket sitting next to its own tier2
+    # members would be identified off extraction disagreement rather than anything economic.
+    regressors: [tier2, tier1, scope_matched, scope_mismatched]
+    # scope_matched / scope_mismatched need to know which taxonomy scope each outcome belongs
+    # to — the column names carry no scope the code can read. Only outcomes listed here get
+    # those two regressions; the placebos and the cross-scope aggregates have no single scope
+    # and are skipped for them (they still get tier2 and tier1).
+    # This is the falsification pair on the X side, mirroring water/waste on the Y side:
+    # scope_matched holds the measures that can physically move this y, scope_mismatched holds
+    # every other measure, which cannot. Mismatched performing as well as matched means the
+    # flags track a firm characteristic, not an abatement channel.
+    outcome_scope:
+      intensity_ghg_scope_1: S1                      # 6 S1 measures
+      absolute_ghg_scope_1: S1
+      intensity_ghg_scope_2_location_based: S2       # 4 S2 measures
+      intensity_ghg_scope_2_market_based: S2
+      intensity_ghg_scope_3_downstream_total: S3D    # 7 S3D measures
+    # How many years the flags lead the outcome: 0 = contemporaneous, 1 = this year's y on last
+    # year's report. Each lag is its own regression, and a lag REPLACES the contemporaneous
+    # flags rather than joining them. Abatement has a lead time, so a measure disclosed at t
+    # should move y at t+1 or t+2, not at t; a lag also rules out this year's emissions driving
+    # this year's disclosure. It costs sample: only 65% of cells have a t-1 partner in the panel.
+    # At window 3 a lag shifts a 3-year window, so consecutive lags mostly re-use the same
+    # reports: corr(flags at lag 0, flags at lag k) is 0.772 at k=1 and 0.559 at k=2 — near
+    # duplicates of lag 0, not new information. k=3 is the first fully disjoint past window
+    # (corr 0.336, which is just genuine firm persistence) and is the one that cleanly rules
+    # out this year's emissions driving this year's report. Hence [0, 3], not [0, 1, 2].
+    lags: [0]
+    # log_n_chunks is the sampling exposure: a flag can only fire in a chunk we sampled, and
+    # P(a flag fires) runs 4.9% -> 22.0% from the shortest to the longest quartile of reports.
+    # Firm FE does NOT absorb this — the within-firm correlation between ln(n_chunks) and the
+    # number of flags fired is 0.633, barely below the 0.649 raw. Longer reports also come in
+    # higher-emitting years (within-firm corr 0.118 with ln y), so leaving it out biases every
+    # flag coefficient upward. The controls are lagged with the flags, not with y.
+    # Also available: log_revenue (firm size), n_years, n_filings, filed_this_year.
+    controls: [log_n_chunks]
     min_switchers: 30                    # drop a flag identified off fewer firms than this
-    cluster: companyid
+    # null = heteroskedasticity-robust (HC1) instead of clustering. NOTE this assumes a firm's
+    # observations are independent once the fixed effects are out, which a panel of repeat
+    # observations per firm generally violates — expect understated SEs and more apparent
+    # significance. Set back to `companyid` for the defensible version.
+    cluster: null
