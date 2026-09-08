@@ -42,6 +42,7 @@ class PanelBuilder:
         self.trucost_join_tolerance_days = section["trucost_join_tolerance_days"]
         self.disclosed_max_score = section["disclosed_max_score"]
         self.share_denominator = section["share_denominator"]
+        self.previous_year_extra = section["previous_year_extra"]
         self.mapping_csv = data["output"]["mapping_csv"]
         self.trucost_csv = data["input"]["trucost_csv"]
 
@@ -102,16 +103,19 @@ class PanelBuilder:
         panel = pd.concat([self._window_panel(df, w) for w in self.windows], ignore_index=True)
         return self._merge_outcomes(panel)
 
-    @staticmethod
-    def _add_previous_year(merged: pd.DataFrame, tc: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
-        """Attach year t-1's outcome as <col>_prev, so the regression can form ln(y_t / y_t-1).
+    def _add_previous_year(self, merged: pd.DataFrame, tc: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+        """Attach year t-1's outcome as <col>_prev, so the regression can form ln(y_t) - ln(y_t-1).
 
         Taken off the Trucost frame, which is near-continuous (12.9 years per firm, 91% of cells
         have a real t-1), not off the panel, which only has years the firm filed a report. Only
-        the y candidates and revenue get a lag — the other ~290 di_* items would triple the file.
+        the y candidates, revenue and anything named in previous_year_extra get a lag — carrying
+        all ~290 di_* items would triple the file.
         """
+        absent = [c for c in self.previous_year_extra if c not in tc.columns]
+        if absent:
+            raise KeyError(f"previous_year_extra names columns absent from Trucost: {absent}")
         base = sorted({c for cols in OUTCOMES.values() for k, c in cols.items() if k != "score"}
-                      | {TOTAL_REVENUE})
+                      | {TOTAL_REVENUE} | set(self.previous_year_extra))
         prev = tc[["companyid", "year"] + base].copy()
         # t-1 by explicit year arithmetic, never a positional shift: Trucost has gaps, and a shift
         # would silently pass off t-2 (or t-5) as the previous year

@@ -17,19 +17,31 @@ from carbontax.taxonomy import GOVERNANCE_FLAGS, MEASURE_SCOPE, TIER1_BUCKETS
 logger = logging.getLogger(__name__)
 
 CELL = ["companyid", "year"]     # panel key, and the join key the lag merge uses
-FE_COLS = ["companyid", "year"]  # firm FE + year FE
 
 # what makes one grid cell — and so one row of results.csv, one subfolder, one regression.
 # The log transform is fixed for a whole run, so it is not part of the name.
-SPEC_KEYS = ["regressors", "y", "window", "lag"]
+SPEC_KEYS = ["regressors", "y", "window", "lag", "fe"]
+
+# outcome transforms. delta_log needs a <col>_prev in the panel — regression.panel.previous_year_extra
+# controls which columns get one. It differences away the firm's level, so with company FE also on
+# the spec the fixed effect becomes a firm-specific TREND rather than a firm-specific level.
+TRANSFORMS = ("log", "level", "delta_log")
+
+# how the dependent variable is written wherever a summary names it
+LHS_LABEL = {"log": "ln(y)", "level": "y", "delta_log": "\u0394 ln(y)"}
 
 # how the standard errors are described wherever a summary names them
 SE_LABEL = {True: "clustered by firm", False: "heteroskedasticity-robust, NOT clustered"}
 
 
-def spec_name(fam: str, y_col: str, window: int, lag: int) -> str:
+def fe_label(fe_cols: list[str]) -> str:
+    """How a fixed-effect set is named in results.csv, folder names and summaries."""
+    return "+".join(fe_cols) if fe_cols else "none"
+
+
+def spec_name(fam: str, y_col: str, window: int, lag: int, fe: list[str]) -> str:
     """Folder name for one grid cell. Every part is already lowercase and underscored."""
-    return f"{fam}__{y_col}__w{window}__lag{lag}"
+    return f"{fam}__{y_col}__w{window}__lag{lag}__fe_{fe_label(fe).replace('+', '-')}"
 
 # exposure controls, available to config.controls — an empty list is legal and means the
 # dummies and the two fixed effects are the whole model. log_n_chunks matters because a flag
@@ -93,10 +105,11 @@ class Regressor:
         self.run_name = run_name
         self.windows = section["window"]
         self.outcomes = section["outcomes"]
-        self.log_transformation_y = section["log_transformation_y"]
+        self.outcome_transform = section["outcome_transform"]
         self.regressors = section["regressors"]
         self.outcome_scope = section["outcome_scope"]
         self.lags = section["lags"]
+        self.fixed_effects = section["fixed_effects"]
         self.controls = section["controls"]
         self.min_switchers = section["min_switchers"]
         self.cluster = section["cluster"]
@@ -124,6 +137,14 @@ class Regressor:
             raise ValueError(f"lags must be non-negative whole years, got {bad}")
         if not isinstance(self.windows, list) or not self.windows:
             raise ValueError(f"window must be a non-empty list of pooling widths, got {self.windows!r}")
+        if self.outcome_transform not in TRANSFORMS:
+            raise ValueError(f"outcome_transform must be one of {TRANSFORMS}, got {self.outcome_transform!r}")
+        if not isinstance(self.fixed_effects, list) or not self.fixed_effects:
+            raise ValueError("fixed_effects must be a non-empty list of fixed-effect sets; "
+                             f"use [] for a set with no fixed effects, got {self.fixed_effects!r}")
+        bad_fe = [fe for fe in self.fixed_effects if not isinstance(fe, list)]
+        if bad_fe:
+            raise ValueError(f"each entry of fixed_effects must itself be a list, got {bad_fe}")
 
     def run(self) -> pd.DataFrame:
         # CSV carries no dtypes: companyid is an all-digit id that would otherwise come back
@@ -137,12 +158,13 @@ class Regressor:
         # one regression per (family, outcome, window, lag) — separate models, never a shared RHS
         table = pd.DataFrame([r for fam in self.regressors for y_col in self.outcomes
                               for window in self.windows for lag in self.lags
-                              for r in self._estimate(panel, y_col, fam, window, lag)])
+                              for fe in self.fixed_effects
+                              for r in self._estimate(panel, y_col, fam, window, lag, fe)])
         dest = regression_results_csv(self.run_name)
         table.to_csv(dest, index=False)
         # the estimated count, not the grid product: thin cells are skipped and never appear
-        planned = (len(self.regressors) * len(self.outcomes)
-                   * len(self.windows) * len(self.lags))
+        planned = (len(self.regressors) * len(self.outcomes) * len(self.windows)
+                   * len(self.lags) * len(self.fixed_effects))
         estimated = table.groupby(SPEC_KEYS).ngroups
         logger.info("Wrote %d coefficient rows over %d of %d planned regressions → %s",
                     len(table), estimated, planned, dest)
@@ -156,13 +178,13 @@ class Regressor:
         os.makedirs(root, exist_ok=True)
 
         written = set()
-        for (fam, y_col, window, lag), block in table.groupby(SPEC_KEYS, sort=False):
-            name = spec_name(fam, y_col, int(window), int(lag))
+        for (fam, y_col, window, lag, fe), block in table.groupby(SPEC_KEYS, sort=False):
+            name = spec_name(fam, y_col, int(window), int(lag), fe.split("+") if fe != "none" else [])
             folder = regression_spec_dir(self.run_name, name)
             os.makedirs(folder, exist_ok=True)
             block.to_csv(os.path.join(folder, "results.csv"), index=False)
             open(os.path.join(folder, "summary.md"), "w").write(
-                self._spec_summary(fam, y_col, int(window), int(lag), block))
+                self._spec_summary(fam, y_col, int(window), int(lag), fe, block))
             written.add(name)
 
         # a folder this run did not write is left over from an earlier config and would read as
@@ -174,11 +196,12 @@ class Regressor:
                            "NOT refreshed: %s", len(stale), root, ", ".join(stale))
         logger.info("Wrote %d spec folders → %s", len(written), root)
 
-    def _spec_summary(self, fam: str, y_col: str, window: int, lag: int,
+    def _spec_summary(self, fam: str, y_col: str, window: int, lag: int, fe: str,
                       block: pd.DataFrame) -> str:
         b = block.copy()
         b["stars"] = np.select([b.p < 0.01, b.p < 0.05, b.p < 0.10], ["***", "**", "*"], "")
         flags = flags_for(fam, y_col, self.outcome_scope) if fam in SCOPED_SETS else REGRESSOR_SETS[fam]
+        # with no fixed effects pyfixest returns an Intercept row, which is neither
         b["kind"] = np.where(b.term.isin(flags), "flag", "control")
 
         show = pd.DataFrame({
@@ -189,34 +212,47 @@ class Regressor:
         }).sort_values(["", "p"])
 
         r = block.iloc[0]
-        lhs = "ln(y)" if self.log_transformation_y else "y"
+        lhs = LHS_LABEL[self.outcome_transform]
         controls = f"{', '.join(self.controls)} + " if self.controls else ""
+        fe_txt = " + ".join(f"{c} FE" for c in fe.split("+")) if fe != "none" else "no fixed effects"
+        r2_txt = "Within-R²" if fe != "none" else "R²"
         return "\n".join([
-            f"# {fam} · `{y_col}` · window {window} · lag {lag}", "",
-            f"`{lhs} ~ {len(flags)} {fam} dummies + {controls}firm FE + year FE`", "",
+            f"# {fam} · `{y_col}` · window {window} · lag {lag} · fe {fe}", "",
+            f"`{lhs} ~ {len(flags)} {fam} dummies + {controls}{fe_txt}`", "",
             f"- Sample: **{int(r.n_obs):,}** company-years over **{int(r.n_firms):,}** firms",
             f"- Standard errors: {SE_LABEL[bool(self.cluster)]} (`{r.vcov}`)",
             f"- Flags: {len(flags) - int(r.n_dropped_flags)} estimated, {int(r.n_dropped_flags)} "
-            f"below min_switchers={self.min_switchers}, {int(r.n_collinear)} dropped as collinear"
+            f"dropped, {int(r.n_collinear)} collinear"
             + (f" (`{r.collinear}`)" if isinstance(r.collinear, str) and r.collinear else ""),
-            f"- Within-R²: {r.r2_within:.4f}", "",
+            f"- {r2_txt}: {r.r2_within:.4f}", "",
             "`***` p<0.01, `**` p<0.05, `*` p<0.10. `switchers` = firms whose flag changes over "
             "time, the only ones a within estimator uses.", "",
             _md_table(show), "",
             "Identical content in `results.csv` beside this file.", "",
         ])
 
-    def _estimate(self, panel: pd.DataFrame, y_col: str, fam: str, window: int, lag: int) -> list[dict]:
+    def _estimate(self, panel: pd.DataFrame, y_col: str, fam: str, window: int, lag: int,
+                  fe: list[str]) -> list[dict]:
         d = panel[panel.window == window].copy()
-        if self.log_transformation_y:
+        if self.outcome_transform == "log":
             # logs need a strictly positive outcome; Trucost writes exact zeros for
             # not-applicable categories, which are absences rather than measurements
             d = d[d[y_col] > 0]
             d["dep_y"] = np.log(d[y_col])
-        else:
+        elif self.outcome_transform == "level":
             # y in levels keeps the zero cells, so a spec can change sample as well as scale
             d = d[d[y_col].notna()]
             d["dep_y"] = d[y_col].astype(float)
+        else:
+            # ln(y_t) - ln(y_t-1). Both years must be positive, so this is a strictly smaller
+            # sample than the log spec, and t-1 comes off the near-continuous Trucost frame
+            # rather than the panel, which only holds years the firm filed.
+            prev = f"{y_col}_prev"
+            if prev not in d.columns:
+                raise KeyError(f"outcome_transform=delta_log needs {prev!r} in the panel; add "
+                               f"{y_col!r} to regression.panel.previous_year_extra and rebuild")
+            d = d[(d[y_col] > 0) & (d[prev] > 0)]
+            d["dep_y"] = np.log(d[y_col]) - np.log(d[prev])
 
         controls = list(self.controls)
         for c in controls:
@@ -225,7 +261,8 @@ class Regressor:
         # an outcome with no taxonomy scope (water, waste, the cross-scope aggregates) has no
         # matched or mismatched measure set, so those families simply do not apply to it
         if fam in SCOPED_SETS and y_col not in self.outcome_scope:
-            logger.info("SKIP %s / %s / lag %d: outcome has no scope in outcome_scope", fam, y_col, lag)
+            logger.info("SKIP %s / %s / lag %d / fe %s: outcome has no scope in outcome_scope",
+                        fam, y_col, lag, fe_label(fe))
             return []
         flags = flags_for(fam, y_col, self.outcome_scope)
         missing = [f for f in flags if f not in d.columns]
@@ -243,25 +280,31 @@ class Regressor:
         # problems above (absent columns, unknown config) still raise.
         # singleton firms are left to pyfixest (fixef_rm="singleton"), which removes them iteratively
         if len(d) < 50 or d.companyid.nunique() < 10:
-            logger.warning("SKIP %s / %s / lag %d: sample too small — %d rows, %d firms",
-                           fam, y_col, lag, len(d), d.companyid.nunique())
+            logger.warning("SKIP %s / %s / lag %d / fe %s: sample too small — %d rows, %d firms",
+                           fam, y_col, lag, fe_label(fe), len(d), d.companyid.nunique())
             return []
 
-        # a dummy that never changes within any firm is absorbed by the firm FE; with only a
-        # handful of switchers the coefficient is identified off too few firms to mean anything
+        # switcher counts are reported either way, but only gate the regressor set when the firm
+        # FE is actually on: a dummy constant within firm is absorbed by that FE and contributes
+        # nothing, whereas with no firm FE it still identifies off variation across firms.
         switchers = {f: count_switchers(d, f, "companyid") for f in flags}
-        kept = [f for f in flags if switchers[f] >= self.min_switchers]
+        if "companyid" in fe:
+            kept = [f for f in flags if switchers[f] >= self.min_switchers]
+            reason = f"min_switchers={self.min_switchers}"
+        else:
+            kept = [f for f in flags if d[f].std() > 0]
+            reason = "zero variance"
         if not kept:
-            logger.warning("SKIP %s / %s / lag %d: no flag reaches min_switchers=%d (best is %d)",
-                           fam, y_col, lag, self.min_switchers, max(switchers.values()))
+            logger.warning("SKIP %s / %s / lag %d / fe %s: no flag survives %s",
+                           fam, y_col, lag, fe_label(fe), reason)
             return []
         rhs = kept + [c for c in controls if d[c].std() > 0]
 
-        terms, diag = fe_ols(d, "dep_y", rhs, FE_COLS, self.cluster)
-        logger.info("%s / %s / lag %d: n=%d, %d firms, %d/%d flags estimated, %d dropped collinear",
-                    fam, y_col, lag, diag["n_obs"], diag["n_clusters"], len(kept), len(flags),
-                    diag["n_collinear"])
-        return [{"y": y_col, "log_y": self.log_transformation_y, "regressors": fam,
+        terms, diag = fe_ols(d, "dep_y", rhs, fe, self.cluster)
+        logger.info("%s / %s / lag %d / fe %s: n=%d, %d firms, %d/%d flags, %d collinear",
+                    fam, y_col, lag, fe_label(fe), diag["n_obs"], diag["n_firms"], len(kept),
+                    len(flags), diag["n_collinear"])
+        return [{"y": y_col, "transform": self.outcome_transform, "regressors": fam,
                  "window": window, "lag": lag,
                  "n_dropped_flags": len(flags) - len(kept),
                  **row, "switchers": switchers.get(row["term"], np.nan), **diag}
@@ -281,17 +324,18 @@ class Regressor:
     def _write_summary(self, table: pd.DataFrame) -> None:
         # an empty controls list is legal, so the term only appears when there is one
         controls = f"{', '.join(self.controls)} + " if self.controls else ""
-        lhs = "ln(y)" if self.log_transformation_y else "y"
+        lhs = LHS_LABEL[self.outcome_transform]
         lines = ["# Regression results", "",
-                 f"`{lhs} ~ <adoption dummies at t-lag> + {controls}firm FE + year FE`. "
+                 f"`{lhs} ~ <adoption dummies at t-lag> + {controls}<fixed effects>`. "
                  f"Standard errors {SE_LABEL[bool(self.cluster)]}. One regression per "
-                 f"family × outcome × window × lag — the families are separate models, never a "
-                 f"shared right-hand side, and a lag replaces the contemporaneous flags rather "
-                 f"than joining them.", "",
+                 f"family × outcome × window × lag × fixed-effect set — the families are separate "
+                 f"models, never a shared right-hand side, and a lag replaces the contemporaneous "
+                 f"flags rather than joining them.", "",
                  "Coefficient (standard error). `***` p<0.01, `**` p<0.05, `*` p<0.10."]
 
         # column order follows the config, so the specs read left to right the way they were asked for
-        spec_order = [(w, k) for w in self.windows for k in self.lags]
+        fe_labels = [fe_label(fe) for fe in self.fixed_effects]
+        spec_order = [(w, k, e) for w in self.windows for k in self.lags for e in fe_labels]
 
         # one table per (family, outcome), every window × lag side by side — the comparison to read
         for fam in self.regressors:
@@ -299,7 +343,8 @@ class Regressor:
                 block = table[(table.regressors == fam) & (table.y == y_col)
                               # flags only: a scoped family's set varies by outcome, so the
                               # controls are excluded by name rather than the flags by membership
-                              & ~table.term.isin(self.controls)].copy()
+                              # flags only: drop the controls by name and the no-FE intercept
+                              & ~table.term.isin(self.controls + ["Intercept"])].copy()
                 if block.empty:  # every spec for this pair was skipped as too thin
                     lines += ["", f"## {fam} — `{y_col}`", "", "_no spec produced an estimate._"]
                     continue
@@ -308,8 +353,9 @@ class Regressor:
                 block["est"] = (block.coef.map("{:+.4f}".format) + block.stars
                                 + " (" + block.se.map("{:.4f}".format) + ")")
                 block["spec"] = ("w" + block.window.astype(int).astype(str)
-                                 + " lag" + block.lag.astype(int).astype(str))
-                labels = [f"w{w} lag{k}" for w, k in spec_order]
+                                 + " lag" + block.lag.astype(int).astype(str)
+                                 + " " + np.where(block.fe == "none", "noFE", "FE"))
+                labels = [f"w{w} lag{k} {'noFE' if e == 'none' else 'FE'}" for w, k, e in spec_order]
 
                 wide = block.pivot_table(index="term", columns="spec", values="est", aggfunc="first")
                 wide = wide.reindex(columns=[c for c in labels if c in wide.columns])
