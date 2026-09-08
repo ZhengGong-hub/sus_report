@@ -220,8 +220,14 @@ regression:
     # otherwise removes. Useful as a contrast, not as the headline. Note min_switchers only
     # gates the regressors when company FE is present; without it a measure constant within a
     # firm still carries information, so the gate becomes a zero-variance check instead.
+    # sector is mapped from panel.simpleindustry; sector_year is one FE per sector × year.
+    # [sector, year] = additive effects; [sector_year] = sector-specific annual effects.
+    # Use [companyid, sector_year] to also absorb company effects.
+    sector_mapping_csv: data/input/ciq_simple_industries_by_sector.csv
     fixed_effects:
       - [companyid, year]
+      - [sector, year]
+      - [sector_year]
       - []
     # log_n_chunks is the sampling exposure: a flag can only fire in a chunk we sampled, and
     # P(a flag fires) runs 4.9% -> 22.0% from the shortest to the longest quartile of reports.

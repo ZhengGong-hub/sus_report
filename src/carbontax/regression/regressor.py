@@ -110,6 +110,7 @@ class Regressor:
         self.outcome_scope = section["outcome_scope"]
         self.lags = section["lags"]
         self.fixed_effects = section["fixed_effects"]
+        self.sector_mapping_csv = section.get("sector_mapping_csv")
         self.controls = section["controls"]
         self.min_switchers = section["min_switchers"]
         self.cluster = section["cluster"]
@@ -150,6 +151,8 @@ class Regressor:
         # CSV carries no dtypes: companyid is an all-digit id that would otherwise come back
         # as int64 and no longer match the string ids everything upstream is keyed on
         panel = pd.read_csv(panel_csv(self.run_name), dtype={"companyid": "string"}, low_memory=False)
+        if any(c in {"sector", "sector_year"} for fe in self.fixed_effects for c in fe):
+            panel = self._add_sector(panel)
         absent = [c for c in self.outcomes if c not in panel.columns]
         if absent:
             raise KeyError(f"outcome columns absent from the panel: {absent}")
@@ -171,6 +174,34 @@ class Regressor:
         self._write_spec_folders(table)
         self._write_summary(table)
         return table
+
+    def _add_sector(self, panel: pd.DataFrame) -> pd.DataFrame:
+        """Map CIQ simple-industry descriptions to sector names on existing panels."""
+        if not self.sector_mapping_csv:
+            raise ValueError("sector FE requires regression.specs.sector_mapping_csv")
+        if "simpleindustry" not in panel:
+            raise KeyError("sector FE requires simpleindustry in the panel; rebuild the panel")
+        mapping = pd.read_csv(self.sector_mapping_csv, dtype="string")
+        keys = mapping["SIMPLEINDUSTRYDESCRIPTION"].str.strip()
+        sectors = mapping["SECTORDESCRIPTION"].str.strip()
+        if keys.isna().any() or keys.duplicated().any() or sectors.isna().any():
+            raise ValueError("sector mapping must have unique, non-missing industries and sectors")
+        panel = panel.copy()
+        panel["sector"] = panel.simpleindustry.astype("string").str.strip().map(
+            pd.Series(sectors.to_numpy(), index=keys))
+        missing = panel.sector.isna()
+        if missing.any():
+            logger.warning("Sector mapping missing for %d panel rows; excluded only from sector FE "
+                           "specifications. Industries: %s", missing.sum(),
+                           panel.loc[missing, "simpleindustry"].unique().tolist())
+        if any("sector_year" in fe for fe in self.fixed_effects):
+            # Factorize pairs rather than concatenating labels, avoiding delimiter collisions.
+            # Missing components stay missing so the specification's dropna excludes them.
+            valid = panel[["sector", "year"]].notna().all(axis=1)
+            panel["sector_year"] = pd.Series(pd.NA, index=panel.index, dtype="Int64")
+            pairs = pd.MultiIndex.from_frame(panel.loc[valid, ["sector", "year"]])
+            panel.loc[valid, "sector_year"] = pd.factorize(pairs)[0]
+        return panel
 
     def _write_spec_folders(self, table: pd.DataFrame) -> None:
         """One subfolder per grid cell, each holding that regression's own results.csv and summary.md."""
@@ -226,7 +257,7 @@ class Regressor:
             + (f" (`{r.collinear}`)" if isinstance(r.collinear, str) and r.collinear else ""),
             f"- {r2_txt}: {r.r2_within:.4f}", "",
             "`***` p<0.01, `**` p<0.05, `*` p<0.10. `switchers` = firms whose flag changes over "
-            "time, the only ones a within estimator uses.", "",
+            "time; the min_switchers filter applies only with company fixed effects.", "",
             _md_table(show), "",
             "Identical content in `results.csv` beside this file.", "",
         ])
@@ -274,7 +305,8 @@ class Regressor:
         d = self._apply_lag(d, flags + controls, lag)
         # not for pyfixest, which drops NaN rows itself — this is so the switcher counts and the
         # zero-variance control check below are computed on the rows the regression actually uses
-        d = d.dropna(subset=["dep_y"] + flags + controls)
+        d = d.dropna(subset=["dep_y"] + flags + controls + fe
+                        + ([self.cluster] if self.cluster else []))
         # A thin cell is a fact about the data, not a broken config, so it is skipped rather than
         # raised on: a grid is expected to have corners a sparse outcome cannot fill. Structural
         # problems above (absent columns, unknown config) still raise.

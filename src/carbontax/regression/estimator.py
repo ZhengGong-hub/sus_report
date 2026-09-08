@@ -32,16 +32,13 @@ def fe_ols(frame: pd.DataFrame, y_col: str, x_cols: list[str],
 
     collinear = fit._collin_vars or []
     if fe_cols:
-        # _k_fe counts the levels of each absorbed dimension, keyed by name — look the unit
-        # dimension up rather than taking the first entry, whose order pyfixest does not
-        # guarantee. Works for either vcov, unlike _G, which comes back empty under HC1.
-        unit_key = next(k for k in fit._k_fe.index if fe_cols[0] in str(k))
-        n_firms, n_absorbed = int(fit._k_fe[unit_key]), int(fit._k_fe.sum())
+        n_firms = int(fit._data[UNIT].nunique())
+        n_absorbed = int(fit._k_fe.sum())
         # with no FE there is no within transformation, so pyfixest returns nan for r2_within
         # and plain R² is the only fit statistic that means anything
         r2 = float(fit._r2_within)
     else:
-        n_firms, n_absorbed = int(frame[UNIT].nunique()), 0
+        n_firms, n_absorbed = int(fit._data[UNIT].nunique()), 0
         r2 = float(fit._r2)
 
     diagnostics = {"n_obs": int(fit._N), "n_firms": n_firms,
