@@ -26,6 +26,7 @@ dependencies = [
     "pydantic>=2.0",
     "openai-batch-wrapper @ git+https://github.com/ZhengGong-hub/openai-batch-wrapper.git@v0.0.5",
     "pyfixest>=0.60.0",
+    "matplotlib>=3.7",
 ]
 
 # Console entry points — run from the repo root; all read config/run.yaml (no CLI arguments).

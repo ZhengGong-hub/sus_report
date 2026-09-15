@@ -182,13 +182,14 @@ regression:
     #           "do firms carrying this measure trend down faster", not "is their level lower".
     #           A measure that permanently lowers the level shows up only in its adoption year.
     #           With company FE also on, the fixed effect becomes a firm-specific trend.
-    outcome_transform: delta_log
+    # Run both transformations as separate specifications. A single string also works.
+    outcome_transform: [log, delta_log]
     # Which families of adoption dummies to estimate. tier2 = 30 specific measures,
     # tier1 = 5 scope-level buckets, governance = 4 commitment flags. Each family is its own
     # regression (families × outcomes), NOT a shared right-hand side: tier1 and tier2 measure
     # the same thing at different resolutions, so a tier1 bucket sitting next to its own tier2
     # members would be identified off extraction disagreement rather than anything economic.
-    regressors: [tier2, tier1, scope_matched, scope_mismatched]
+    regressors: [tier2, tier1, scope_matched]
     # scope_matched / scope_mismatched need to know which taxonomy scope each outcome belongs
     # to — the column names carry no scope the code can read. Only outcomes listed here get
     # those two regressions; the placebos and the cross-scope aggregates have no single scope
@@ -225,10 +226,8 @@ regression:
     # Use [companyid, sector_year] to also absorb company effects.
     sector_mapping_csv: data/input/ciq_simple_industries_by_sector.csv
     fixed_effects:
-      - [companyid, year]
       - [sector, year]
       - [sector_year]
-      - []
     # log_n_chunks is the sampling exposure: a flag can only fire in a chunk we sampled, and
     # P(a flag fires) runs 4.9% -> 22.0% from the shortest to the longest quartile of reports.
     # Firm FE does NOT absorb this — the within-firm correlation between ln(n_chunks) and the

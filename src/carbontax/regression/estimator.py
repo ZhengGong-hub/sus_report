@@ -28,6 +28,7 @@ def fe_ols(frame: pd.DataFrame, y_col: str, x_cols: list[str],
     # can come back shorter than x_cols — the caller carries the names, not the row positions
     tidy = fit.tidy().reset_index()
     terms = pd.DataFrame({"term": tidy["Coefficient"], "coef": tidy["Estimate"],
+                          "ci_low": tidy["2.5%"], "ci_high": tidy["97.5%"],
                           "se": tidy["Std. Error"], "t": tidy["t value"], "p": tidy["Pr(>|t|)"]})
 
     collinear = fit._collin_vars or []
